@@ -13,16 +13,23 @@ import '../core/utils/financial_year.dart';
 import '../core/utils/loyalty_utils.dart';
 import 'product_kit_repository.dart';
 import 'stock_group_repository.dart';
+import '../services/gl_service.dart';
 
 class SaleRepository {
-  SaleRepository({DatabaseHelper? dbHelper, ProductKitRepository? kitRepo, StockGroupRepository? stockGroupRepo})
-      : _dbHelper = dbHelper ?? DatabaseHelper.instance,
+  SaleRepository({
+    DatabaseHelper? dbHelper,
+    ProductKitRepository? kitRepo,
+    StockGroupRepository? stockGroupRepo,
+    GLService? glService,
+  })  : _dbHelper = dbHelper ?? DatabaseHelper.instance,
         _kitRepo = kitRepo ?? ProductKitRepository(),
-        _stockGroupRepo = stockGroupRepo ?? StockGroupRepository();
+        _stockGroupRepo = stockGroupRepo ?? StockGroupRepository(),
+        _glService = glService ?? GLService();
 
   final DatabaseHelper _dbHelper;
   final ProductKitRepository _kitRepo;
   final StockGroupRepository _stockGroupRepo;
+  final GLService _glService;
 
   /// Pass [txn] to run inside an already-open transaction (e.g. from
   /// [ExchangeRepository], which composes a new sale with a return
@@ -294,6 +301,41 @@ class SaleRepository {
           }
         }
       }
+
+      // 4. General Ledger: debit Cash for what was taken at the till and
+      // Accounts Receivable for whatever the customer still owes, credit
+      // Sales Revenue for the bill. Posted with `txn`, so the ledger commits
+      // or rolls back with the sale itself — a sale whose GL post fails (a
+      // closed financial year, a missing chart of accounts) fails as a sale
+      // rather than committing and leaving the books silently short. That
+      // is the "side-effect inside the caller's transaction" pattern already
+      // used above for stock, loyalty and sync.
+      //
+      // This sits in the repository rather than in BillingService because
+      // this is where the sale actually becomes final, and it is the only
+      // place every sale passes through — an exchange composes its
+      // replacement sale by calling in here with its own `txn`, and would
+      // never reach a post made in BillingService.processSale.
+      //
+      // `partialPaymentAmount` and `creditUsed` are the two ways this app
+      // grows a customer's outstanding balance (see the customer update
+      // above); their sum is exactly the receivable side of the sale.
+      final receivable = (savedSale.creditUsed ?? 0) + (savedSale.partialPaymentAmount ?? 0);
+      // `Sale.create` always stamps createdAt; the fallback only guards a
+      // hand-built Sale left at the default 0, which would otherwise file the
+      // entry under financial year 69-70.
+      final saleDate = savedSale.createdAt > 0
+          ? DateTime.fromMillisecondsSinceEpoch(savedSale.createdAt * 1000)
+          : DateTime.now();
+      await _glService.postSaleEntries(
+        saleId: savedSale.id,
+        saleDate: saleDate,
+        netAmount: savedSale.netAmount,
+        receivableAmount: receivable,
+        description: 'Sale ${savedSale.invoiceDisplayNo ?? savedSale.invoiceNo}',
+        createdBy: savedSale.userId,
+        executor: txn,
+      );
 
       // Fixed: pass `txn` so this write is part of the same atomic
       // transaction instead of racing it on a separate connection reference.

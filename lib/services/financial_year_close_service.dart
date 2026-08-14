@@ -1,3 +1,4 @@
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/database/database_helper.dart';
@@ -46,8 +47,14 @@ class FinancialYearCloseService {
   }
 
   /// Whether [financialYear] has already been closed.
-  Future<bool> isFinancialYearClosed(String financialYear) async {
-    final db = await _dbHelper.database;
+  ///
+  /// Pass [executor] as the active `txn` when calling this from inside a
+  /// transaction — `GLService` checks it before posting a sale's ledger
+  /// entries, and that check runs within the sale's own transaction. Reading
+  /// through `_dbHelper.database` there instead would issue the query outside
+  /// the transaction and deadlock against it.
+  Future<bool> isFinancialYearClosed(String financialYear, {DatabaseExecutor? executor}) async {
+    final db = executor ?? await _dbHelper.database;
     final rows = await db.query(
       'financial_year_closures',
       columns: ['1'],

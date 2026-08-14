@@ -6,14 +6,20 @@ import '../models/sales_return_item_model.dart';
 import '../models/customer_ledger_model.dart';
 import '../models/stock_ledger_model.dart';
 import 'stock_group_repository.dart';
+import '../services/gl_service.dart';
 
 class SalesReturnRepository {
-  SalesReturnRepository({DatabaseHelper? dbHelper, StockGroupRepository? stockGroupRepo})
-      : _dbHelper = dbHelper ?? DatabaseHelper.instance,
-        _stockGroupRepo = stockGroupRepo ?? StockGroupRepository();
+  SalesReturnRepository({
+    DatabaseHelper? dbHelper,
+    StockGroupRepository? stockGroupRepo,
+    GLService? glService,
+  })  : _dbHelper = dbHelper ?? DatabaseHelper.instance,
+        _stockGroupRepo = stockGroupRepo ?? StockGroupRepository(),
+        _glService = glService ?? GLService();
 
   final DatabaseHelper _dbHelper;
   final StockGroupRepository _stockGroupRepo;
+  final GLService _glService;
 
   /// Inserts a return header + its lines in one transaction. Never mutates
   /// the original `sales`/`sale_items` rows — same compensating-row
@@ -127,6 +133,24 @@ class SalesReturnRepository {
           await txn.insert('customer_ledger', ledgerEntry.toJson());
         }
       }
+
+    // General Ledger: revenue the shop no longer earned. Debit Sales Revenue
+    // and credit whatever gave the money back — Accounts Receivable when the
+    // refund is adjusted against the customer's outstanding balance (the
+    // `credit_adjust` branch just above), Cash otherwise. Posted with `txn`
+    // so the ledger commits or rolls back with the return itself.
+    final returnDate = saved.createdAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(saved.createdAt * 1000)
+        : DateTime.now();
+    await _glService.postSalesReturnEntries(
+      returnId: saved.id,
+      saleId: saved.saleId,
+      returnDate: returnDate,
+      refundAmount: saved.refundAmount,
+      refundedAgainstCredit: saved.customerId != null && saved.refundMethod == 'credit_adjust',
+      createdBy: saved.userId,
+      executor: txn,
+    );
 
     await _dbHelper.queueSync('sales_returns', saved.id, 'INSERT', saved.toJson(), executor: txn);
 
