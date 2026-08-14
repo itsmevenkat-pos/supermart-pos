@@ -9,12 +9,12 @@ for the protocol. Update this at the end of every run.
 |---|------|-------|
 | 1.1 | [01-gl-schema.md](01-gl-schema.md) — database schema | ✅ Done |
 | 1.2 | [02-gl-models-repos.md](02-gl-models-repos.md) — models + repository | ✅ Done |
-| 1.3 | [03-gl-service-logic.md](03-gl-service-logic.md) — posting/balance logic | ⬜ Not started |
+| 1.3 | [03-gl-service-logic.md](03-gl-service-logic.md) — posting/balance logic | ✅ Done |
 | 1.4 | [04-financial-statements.md](04-financial-statements.md) — TB/P&L/Balance Sheet | ⬜ Not started |
 | 1.5 | [05-testing.md](05-testing.md) — consolidation testing | ⬜ Not started |
 | 1.6 | [06-documentation.md](06-documentation.md) — docs | ⬜ Not started |
 
-**Next run starts at: Task 1.3 (service / posting logic).**
+**Next run starts at: Task 1.4 (financial statements + report screens).**
 
 ## Environment notes for the next run
 
@@ -60,6 +60,7 @@ comm -13 /tmp/analyze_baseline.txt /tmp/analyze_after.txt   # must be empty
 - Pre-existing test suite: **151 tests, all passing.**
 - After Task 1.1: 182 issues (**0 new**), **167 tests passing** (+16 new).
 - After Task 1.2: 182 issues (**0 new**), **197 tests passing** (+30 new).
+- After Task 1.3: 182 issues (**0 new**), **238 tests passing** (+41 new).
 
 ## Completed work
 
@@ -163,16 +164,90 @@ Decisions and deviations, with reasons:
    worth more than `const`: this is the one place that can stop a malformed
    journal line before it reaches an append-only table.
 
+### Task 1.3 — GL service logic and transaction integration (done)
+
+Files added:
+- `lib/services/gl_exceptions.dart` — `GLException` + `AccountNotFound`,
+  `UnbalancedEntry`, `ClosedPeriod`, `EntryNotFound`.
+- `lib/services/gl_service.dart` — posting, reversal, running balances, the
+  sale/purchase/return posting entry points, `glServiceProvider`.
+- `test/services/gl_service_test.dart` (new) — 41 tests.
+
+Files changed:
+- `lib/repositories/sale_repository.dart`, `purchase_repository.dart`,
+  `sales_return_repository.dart` — one GL post each, inside the existing
+  transaction.
+- `lib/services/financial_year_close_service.dart` — `isFinancialYearClosed`
+  gained an optional `executor`.
+
+Decisions and deviations, with reasons:
+
+1. **GL posting is inside the caller's transaction, not best-effort.** Task
+   1.3 asked for this to be decided and documented in the PR — this is the
+   decision. A sale whose GL post fails now fails as a sale and rolls back
+   entirely. The alternative (log and carry on) means the shop keeps the
+   customer's money with no ledger record and no one finds out until someone
+   reconciles months later. A test posts a sale into a closed financial year
+   and asserts that no sale row, no ledger line and no stock deduction
+   survive.
+
+2. **The sale's post lives in `sale_repository._insertSaleBody`, not in
+   `billing_service.dart`** as the task file's wording suggested. Three
+   reasons: that method is where the sale actually becomes final, it already
+   owns the transaction, and it is the only place *every* sale passes through
+   — `ExchangeRepository` composes its replacement sale by calling
+   `insertSaleWithItems` with its own `txn`, so a post added to
+   `BillingService.processSale` would silently miss every exchange. The task
+   file's own instruction ("find the single right place a completed sale
+   becomes final, inside the existing transaction if possible") points here.
+
+3. **A sale's receivable side is `creditUsed + partialPaymentAmount`.** Those
+   are the two fields the existing customer-balance update treats as newly
+   owed, so using the same pair keeps the GL and the customer ledger telling
+   the same story. The remainder is posted to Cash.
+
+4. **Sales returns post a fresh entry rather than reversing the sale's
+   lines.** The task file suggested `reverseEntry` per line; that is right for
+   a full void but wrong for a partial return, which is the common case —
+   reversing the sale's lines reverses the sale's *whole* value, so returning
+   two of five items would credit back the entire bill. `postSalesReturnEntries`
+   posts the actual `refundAmount` (debit Sales Revenue, credit Cash or
+   Accounts Receivable depending on `refundMethod`), which is correct for
+   partial and full alike. `reverseEntry` / `reverseByReference` are
+   implemented and tested for genuine full voids.
+
+5. **Sale cancellations are not wired up.** Tasks 1.1–1.6 never mention them,
+   and `sale_cancellation_repository.dart` is a separate path from returns. A
+   cancelled sale therefore still leaves its GL entries standing. This is a
+   real gap, deliberately left rather than scope-crept — `reverseByReference`
+   already exists and is exactly the right tool, so wiring it is a small
+   follow-up. **Worth raising in the PR description.**
+
+6. **`isFinancialYearClosed` gained an optional `executor`.** The closed-year
+   check has to run *inside* the sale's transaction; reading through
+   `_dbHelper.database` there would issue the query outside the transaction
+   and deadlock against it in sqflite. Same `{DatabaseExecutor? executor}`
+   convention the ledger repositories already use.
+
+7. **GST is not split out of Sales Revenue.** The whole bill including tax
+   credits `4000`, because the default chart of accounts has no output-tax
+   liability account. A deliberate Phase 1 simplification, documented on
+   `postSaleEntries` — splitting it means adding a tax account and reworking
+   the sale split.
+
+8. **`getTrialBalance` is intentionally not on `GLService` yet.** Task 1.3
+   says it may delegate to `FinancialStatementService` and that the SQL must
+   not be duplicated — so it belongs to Task 1.4, built once there. Add a
+   thin delegating method on `GLService` then if it is wanted.
+
 ## Open questions / notes for later tasks
 
-- **Task 1.3, GL posting inside vs. alongside the sale transaction.** The task
-  file asks for this to be decided and documented in the PR. Not yet decided —
-  read `billing_service.dart` and `purchase_repository.dart` first. The README
-  points at `stock_group_repository.dart`'s `propagateDelta(executor:)` as the
-  existing "side-effect inside the caller's transaction" pattern, and
-  `GLRepository`/`GLService` will likely need the same optional
-  `DatabaseExecutor? executor` parameter to participate in the sale's
-  transaction rather than opening its own.
+- **Task 1.4 must reuse `signedBalance`/`isNormallyDebit`** from
+  `chart_of_account_model.dart` and the `sub_type` values seeded in Task 1.1
+  (`current_asset`, `fixed_asset`, `current_liability`,
+  `long_term_liability`, `equity`, `operating_revenue`, `other_income`,
+  `cogs`, `operating_expense`, `other_expense`). COGS is account `5000` /
+  sub_type `cogs`.
 - **Task 1.4 UI verification.** That task says to verify the three new report
   screens by actually launching the app. This container is headless with no
   Linux desktop toolchain configured, so `flutter run -d linux` is unlikely to
