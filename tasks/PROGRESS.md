@@ -11,10 +11,11 @@ for the protocol. Update this at the end of every run.
 | 1.2 | [02-gl-models-repos.md](02-gl-models-repos.md) — models + repository | ✅ Done |
 | 1.3 | [03-gl-service-logic.md](03-gl-service-logic.md) — posting/balance logic | ✅ Done |
 | 1.4 | [04-financial-statements.md](04-financial-statements.md) — TB/P&L/Balance Sheet | ✅ Done |
-| 1.5 | [05-testing.md](05-testing.md) — consolidation testing | ⬜ Not started |
-| 1.6 | [06-documentation.md](06-documentation.md) — docs | ⬜ Not started |
+| 1.5 | [05-testing.md](05-testing.md) — consolidation testing | ✅ Done |
+| 1.6 | [06-documentation.md](06-documentation.md) — docs | ✅ Done |
 
-**Next run starts at: Task 1.5 (consolidation / end-to-end testing).**
+**All six tasks are complete.** Phase 1 is finished and the branch is pushed;
+see "Final state" at the bottom for what remains open.
 
 ## Environment notes for the next run
 
@@ -62,6 +63,8 @@ comm -13 /tmp/analyze_baseline.txt /tmp/analyze_after.txt   # must be empty
 - After Task 1.2: 182 issues (**0 new**), **197 tests passing** (+30 new).
 - After Task 1.3: 182 issues (**0 new**), **238 tests passing** (+41 new).
 - After Task 1.4: 182 issues (**0 new**), **263 tests passing** (+25 new).
+- After Task 1.5: 182 issues (**0 new**), **264 tests passing** (+1 end-to-end).
+- After Task 1.6: 182 issues (**0 new**), **264 tests passing** — docs only.
 
 Note on comparing analyze output: adding lines to an existing file shifts the
 line numbers of every issue below, so a raw `comm` diff shows dozens of
@@ -341,3 +344,78 @@ Decisions and deviations, with reasons:
   `test/services/financial_year_close_service_test.dart` — temp dir +
   `_FakePathProviderPlatform` + `DatabaseHelper.instance`. That is what
   `gl_schema_test.dart` follows, and what later GL tests should follow too.
+
+### Task 1.5 — Consolidation testing (done)
+
+Files added:
+- `test/integration/gl_end_to_end_test.dart` (new) — one full-cycle scenario.
+
+Notes:
+
+1. Every ledger entry in the main scenario is a **side effect of a real sale,
+   purchase or return** going through the app's own repositories. No
+   hand-inserted `gl_entries` rows — that is the only way the test proves the
+   integration fires, rather than that the GL code works when called directly.
+
+2. Two pre-existing app behaviours the test had to be taught, neither a GL bug
+   and both worth knowing before writing any purchase-related test:
+   - Receiving stock **rewrites `products.retail_price` from the purchase
+     line's `salesPrice`** (`purchase_repository.dart:96,105`). Left at its
+     default 0, the follow-up sale billed 0.00 — and correctly posted nothing,
+     since `postSaleEntries` no-ops on a zero-value bill.
+   - A purchase line is matched to a product **by `mrp`**
+     (`purchase_repository.dart:355`); a mismatched mrp creates a new price
+     variant rather than receiving into the same product.
+
+3. Coverage checked by hand against the task's "every new public method has at
+   least one test" bar: all 16 on `GLRepository`, all 10 on `GLService` and all
+   4 on `FinancialStatementService` are exercised.
+
+### Task 1.6 — Documentation (done)
+
+Files added/changed:
+- `docs/GL_ARCHITECTURE.md` (new) — schema, classes, where each posting
+  happens, the three invariants, and every known gap.
+- `docs/GL_USER_GUIDE.md` (new) — for whoever reconciles the books.
+- `README.md` — a "General Ledger" section linking to both.
+- `FEATURE_STATUS.md` — new §15, plus a line under §10.
+
+Notes:
+
+1. The root `README.md` is still the stock Flutter template with no features
+   list to slot into, so the GL section is new. **`FEATURE_STATUS.md` is the
+   repo's real live feature reference** (its own header says to keep it current
+   as work lands), so the substantive status went there as §15 and the README
+   just points at the docs.
+
+2. Both `GL_ARCHITECTURE.md` and `FEATURE_STATUS.md` §15 document what was
+   *built*, including every deviation from the task files and every known gap —
+   COGS reading zero, cancellations unwired, GST not split, and the UI not
+   having been run. Kept deliberately blunt: these are the things most likely
+   to be mistaken for bugs later.
+
+## Final state
+
+Phase 1 is complete. `feature/phase1-gl` is pushed with 264 tests passing and
+zero new analyze issues over the pre-existing 182-issue baseline.
+
+### Deliberately not done, and why
+
+1. **COGS posting.** Nothing writes to account `5000`, so the GL P&L shows
+   gross profit == revenue. Task 1.3 scoped the sale integration as
+   cash/receivable against revenue only, so adding an inventory-to-COGS
+   movement would have changed committed Task 1.3 behaviour from a later task.
+   Left visible rather than back-filled from `sale_items.cost_price`, and
+   pinned by a test asserting the zero. **The most useful next piece of work.**
+2. **Sale cancellations** (`sale_cancellation_repository.dart`) don't post to
+   the GL, so a cancelled sale leaves its entries standing. Tasks 1.1–1.6 never
+   mention cancellations; `reverseByReference` already exists and is the right
+   tool.
+3. **GST split.** The whole bill including tax credits Sales Revenue; the
+   default chart has no output-tax liability account.
+4. **`chart_of_accounts.opening_balance`** is stored but never read.
+5. **UI not run.** No build of this app is possible in the CI container — no
+   GTK for Linux, web blocked by pre-existing `dart:ffi` in
+   `windows_printer.dart`. The screens are verified by analyze and by the
+   service tests beneath them. A widget smoke test is also currently
+   impossible for *any* `AppScaffold` screen in this repo (see Task 1.4 note 6).
