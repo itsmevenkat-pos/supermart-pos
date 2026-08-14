@@ -10,11 +10,11 @@ for the protocol. Update this at the end of every run.
 | 1.1 | [01-gl-schema.md](01-gl-schema.md) — database schema | ✅ Done |
 | 1.2 | [02-gl-models-repos.md](02-gl-models-repos.md) — models + repository | ✅ Done |
 | 1.3 | [03-gl-service-logic.md](03-gl-service-logic.md) — posting/balance logic | ✅ Done |
-| 1.4 | [04-financial-statements.md](04-financial-statements.md) — TB/P&L/Balance Sheet | ⬜ Not started |
+| 1.4 | [04-financial-statements.md](04-financial-statements.md) — TB/P&L/Balance Sheet | ✅ Done |
 | 1.5 | [05-testing.md](05-testing.md) — consolidation testing | ⬜ Not started |
 | 1.6 | [06-documentation.md](06-documentation.md) — docs | ⬜ Not started |
 
-**Next run starts at: Task 1.4 (financial statements + report screens).**
+**Next run starts at: Task 1.5 (consolidation / end-to-end testing).**
 
 ## Environment notes for the next run
 
@@ -61,6 +61,16 @@ comm -13 /tmp/analyze_baseline.txt /tmp/analyze_after.txt   # must be empty
 - After Task 1.1: 182 issues (**0 new**), **167 tests passing** (+16 new).
 - After Task 1.2: 182 issues (**0 new**), **197 tests passing** (+30 new).
 - After Task 1.3: 182 issues (**0 new**), **238 tests passing** (+41 new).
+- After Task 1.4: 182 issues (**0 new**), **263 tests passing** (+25 new).
+
+Note on comparing analyze output: adding lines to an existing file shifts the
+line numbers of every issue below, so a raw `comm` diff shows dozens of
+false "new" issues. Compare by file + rule instead:
+
+```bash
+norm() { sed -E 's/:[0-9]+:[0-9]+ •/ •/' "$1" | sed -E 's/^ *//' | sort | uniq -c; }
+diff <(norm /tmp/analyze_baseline.txt) <(norm /tmp/analyze_after.txt)
+```
 
 ## Completed work
 
@@ -240,19 +250,89 @@ Decisions and deviations, with reasons:
    not be duplicated — so it belongs to Task 1.4, built once there. Add a
    thin delegating method on `GLService` then if it is wanted.
 
+### Task 1.4 — Financial statements (done)
+
+Files added:
+- `lib/services/financial_statement_service.dart` — `TrialBalance`,
+  `PLStatement`, `BalanceSheet` + their row/section types, and
+  `financialStatementServiceProvider`.
+- `lib/features/reports/screens/trial_balance_screen.dart`,
+  `pl_statement_screen.dart`, `balance_sheet_screen.dart`.
+- `lib/features/reports/widgets/financial_statement_shell.dart` — the year
+  selector, load/error handling, CSV export and shared statement widgets.
+- `test/services/financial_statement_service_test.dart` (new) — 25 tests.
+
+Files changed:
+- `lib/features/reports/screens/reports_screen.dart` — a new "Accounts
+  (General Ledger)" category under the More Reports tab, registered with the
+  same `_reportTile` helper every other report uses.
+
+Decisions and deviations, with reasons:
+
+1. **The statements read `gl_entries`, not the `gl_balances` cache.** One
+   indexed `GROUP BY` per statement, and a report can then never show a stale
+   figure. It is also the only way the Balance Sheet's `asOf` cut-off can work
+   at all, since the cache only knows whole years. All three share
+   `_accountTotals`, so there is one piece of SQL behind them.
+
+2. **Typed result classes rather than the `Map<String, dynamic>` that
+   `ReportService`/`AdvancedReportService` return.** These statements have real
+   structure (sections, per-account lines, `isBalanced`) and the screens
+   consume it directly; stringly-typed maps would push that structure into the
+   UI as untyped key lookups.
+
+3. **`netProfit` is included in `totalEquity`.** Not a display choice — the
+   accounting identity is `Assets = Liabilities + Equity + (Revenue −
+   Expenses)`, so leaving the last bracket out would make the statement fail
+   to balance. It is shown only; Retained Earnings (`3100`) is deliberately
+   never posted to until the year is closed, and a test asserts that account
+   stays empty.
+
+4. **COGS reads zero, deliberately and visibly.** Nothing posts to account
+   `5000` — Task 1.3's sale integration was cash/receivable against revenue
+   only, with no inventory-to-COGS movement. The task file's warning about two
+   COGS calculations drifting apart is exactly why this is *not* patched over
+   by reading `sale_items.cost_price` the way `ReportService` does. A test
+   asserts `cogs == 0` so that adding a COGS posting later fails loudly rather
+   than silently changing every P&L. **Worth raising in the PR.**
+
+5. **An asset/liability with an unrecognised `sub_type` is filed as
+   current rather than dropped.** A mislabelled asset on the wrong line is a
+   labelling problem; a dropped one silently unbalances the statement.
+
+6. **UI verification could not be done by launching the app**, which Task 1.4
+   asks for. Three routes were tried:
+   - `flutter build linux` — fails, no `gtk+-3.0` in this container.
+   - `flutter build web` — fails on **pre-existing** `dart:ffi` usage in
+     `lib/services/windows_printer.dart` (plus `win32`/`ffi` packages). This
+     app is a Windows/desktop target; a web build was never viable.
+   - A widget smoke test pumping the three screens — blocked by a
+     **pre-existing** Flutter assertion in `AppScaffold`: `_Sidebar` builds
+     `ListTile`s inside a `Container(color: _sidebarBg)`
+     (`app_scaffold.dart:112` and `:154`), which throws "ListTile background
+     color or ink splashes may be invisible" on every debug render. **This
+     affects any widget test of any `AppScaffold`-based screen in this repo,
+     not just these three** — worth knowing before anyone tries to add widget
+     tests here. Fixing it means wrapping those tiles in their own `Material`,
+     which is an app-wide UI change well outside this phase.
+
+   So the screens are verified by `flutter analyze` (they compile clean and
+   are wired into `reports_screen.dart` the same way every other report is)
+   and by the service tests underneath them — not by a manual run. **Say this
+   plainly in the PR rather than implying the UI was exercised.**
+
 ## Open questions / notes for later tasks
 
-- **Task 1.4 must reuse `signedBalance`/`isNormallyDebit`** from
-  `chart_of_account_model.dart` and the `sub_type` values seeded in Task 1.1
-  (`current_asset`, `fixed_asset`, `current_liability`,
-  `long_term_liability`, `equity`, `operating_revenue`, `other_income`,
-  `cogs`, `operating_expense`, `other_expense`). COGS is account `5000` /
-  sub_type `cogs`.
-- **Task 1.4 UI verification.** That task says to verify the three new report
-  screens by actually launching the app. This container is headless with no
-  Linux desktop toolchain configured, so `flutter run -d linux` is unlikely to
-  work. Plan to verify by compilation + widget tests and say so explicitly in
-  the PR rather than claiming a manual run that did not happen.
+- **Things the PR description must state** (accumulating as they are decided,
+  so the run that opens the PR doesn't have to re-derive them):
+  1. GL posting is all-or-nothing inside the sale/purchase/return transaction
+     (Task 1.3 asked for this decision to be documented).
+  2. Sales returns post the refunded amount rather than reversing the sale's
+     lines, so partial returns aren't over-credited.
+  3. COGS reads zero until something posts to account `5000`.
+  4. Sale cancellations are not wired to the GL.
+  5. The report screens were verified by analyze + service tests, not by
+     launching the app — see Task 1.4 note 6 for why that wasn't possible.
 - `test/core/database/*_test.dart` and
   `test/repositories/product_batch_repository_test.dart` (the file the task
   docs point at as the "real in-memory-DB setup pattern") are actually
