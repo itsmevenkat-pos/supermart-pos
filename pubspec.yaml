@@ -1,0 +1,72 @@
+name: supermart_pos
+description: Enterprise POS for supermarkets.
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Database
+  sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.3.0
+  path_provider: ^2.1.0
+  path: ^1.9.1
+
+  # State Management
+  riverpod: ^2.4.0
+  flutter_riverpod: ^2.4.0
+  riverpod_annotation: ^2.3.0
+
+  # Navigation
+  go_router: ^13.0.0
+
+  # Utilities
+  uuid: ^4.0.0
+  intl: ^0.18.1
+  equatable: ^2.0.5
+
+  # Security
+  crypto: ^3.0.3
+
+  # Printing & Export
+  pdf: ^3.10.4
+  printing: ^5.13.4
+  barcode: ^2.2.7
+  csv: ^5.1.1
+  excel: ^2.0.0
+  xml: ^6.5.0
+
+  # WhatsApp Sharing (NEW)
+  share_plus: ^12.0.0
+  url_launcher: ^6.2.5
+
+  # File selection (logo/signature upload)
+  file_picker: ^8.0.0
+
+  # Cloud backup (Google Drive / OneDrive)
+  googleapis: ^13.0.0
+  googleapis_auth: ^1.6.0
+  oauth2: ^2.0.2
+  http: ^1.1.0
+
+  # Multi-store sync
+  supabase_flutter: ^2.5.0
+
+  # Thermal (ESC/POS) receipt printing — raw bytes to a Windows USB printer
+  ffi: ^2.1.0
+  win32: ^5.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  riverpod_generator: ^2.3.0
+  build_runner: ^2.4.0
+  path_provider_platform_interface: ^2.1.0
+  plugin_platform_interface: ^2.1.0
+
+flutter:
+  uses-material-design: true

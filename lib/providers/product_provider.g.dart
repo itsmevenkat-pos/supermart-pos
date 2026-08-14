@@ -1,0 +1,26 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'product_provider.dart';
+
+// **************************************************************************
+// RiverpodGenerator
+// **************************************************************************
+
+String _$productNotifierHash() => r'9cc1089855f4b5ad8a5b4391b89b79896909b60b';
+
+/// See also [ProductNotifier].
+@ProviderFor(ProductNotifier)
+final productNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<ProductNotifier, List<Product>>.internal(
+  ProductNotifier.new,
+  name: r'productNotifierProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$productNotifierHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+typedef _$ProductNotifier = AutoDisposeAsyncNotifier<List<Product>>;
+// ignore_for_file: type=lint
+// ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package
