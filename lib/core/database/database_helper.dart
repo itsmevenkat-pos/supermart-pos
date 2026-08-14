@@ -13,6 +13,7 @@ import 'migrations/migration_v18.dart';
 import 'migrations/migration_v19.dart';
 import 'migrations/migration_v24.dart';
 import 'migrations/migration_v26.dart';
+import 'migrations/migration_v28.dart';
 import '../../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -529,6 +530,14 @@ class DatabaseHelper {
           } catch (_) {
             // Column may already exist on some upgrade paths — safe to ignore.
           }
+        }
+
+        if (oldVersion < 28) {
+          // General Ledger: chart of accounts, double-entry journal and the
+          // per-financial-year balance cache — see MigrationV28. MigrationV1
+          // calls the same method, so onCreate and onUpgrade produce
+          // identical GL schema and the same seeded accounts.
+          await MigrationV28.up(db);
         }
       },
     );

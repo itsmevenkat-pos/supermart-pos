@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import '../../security/password_hasher.dart';
+import 'migration_v28.dart';
 
 class MigrationV1 {
   static Future<void> up(Database db) async {
@@ -708,5 +709,12 @@ class MigrationV1 {
     for (final festival in festivals) {
       await db.insert('festival_calendar', festival);
     }
+
+    // General Ledger tables + default chart of accounts. Delegated rather
+    // than inlined (unlike the older tables above, which this file duplicates
+    // from their original migrations): the GL schema has to be provably
+    // identical on a fresh install and on an upgrade from v27, and a single
+    // shared implementation is the only way that stays true as the GL evolves.
+    await MigrationV28.up(db);
   }
 }
