@@ -8,13 +8,13 @@ for the protocol. Update this at the end of every run.
 | # | Task | State |
 |---|------|-------|
 | 1.1 | [01-gl-schema.md](01-gl-schema.md) — database schema | ✅ Done |
-| 1.2 | [02-gl-models-repos.md](02-gl-models-repos.md) — models + repository | ⬜ Not started |
+| 1.2 | [02-gl-models-repos.md](02-gl-models-repos.md) — models + repository | ✅ Done |
 | 1.3 | [03-gl-service-logic.md](03-gl-service-logic.md) — posting/balance logic | ⬜ Not started |
 | 1.4 | [04-financial-statements.md](04-financial-statements.md) — TB/P&L/Balance Sheet | ⬜ Not started |
 | 1.5 | [05-testing.md](05-testing.md) — consolidation testing | ⬜ Not started |
 | 1.6 | [06-documentation.md](06-documentation.md) — docs | ⬜ Not started |
 
-**Next run starts at: Task 1.2 (models + repository).**
+**Next run starts at: Task 1.3 (service / posting logic).**
 
 ## Environment notes for the next run
 
@@ -59,6 +59,7 @@ comm -13 /tmp/analyze_baseline.txt /tmp/analyze_after.txt   # must be empty
   pre-existing `test/` and `lib/` files).
 - Pre-existing test suite: **151 tests, all passing.**
 - After Task 1.1: 182 issues (**0 new**), **167 tests passing** (+16 new).
+- After Task 1.2: 182 issues (**0 new**), **197 tests passing** (+30 new).
 
 ## Completed work
 
@@ -119,6 +120,48 @@ Decisions and deviations, with reasons:
    deleting a parent account is blocked outright; `SET NULL` promotes the
    children to top-level instead, which matches how the rest of the schema
    handles optional parents.
+
+### Task 1.2 — GL models and repository (done)
+
+Files added:
+- `lib/models/chart_of_account_model.dart` — `AccountType`, `ChartOfAccount`,
+  and the two free functions `isNormallyDebit()` / `signedBalance()`.
+- `lib/models/gl_entry_model.dart`, `lib/models/gl_balance_model.dart`.
+- `lib/repositories/gl_repository.dart` — accounts, entries, balances,
+  `seedDefaultAccounts()`, `glRepositoryProvider`.
+- `test/repositories/gl_repository_test.dart` (new) — 30 tests.
+
+Decisions and deviations, with reasons:
+
+1. **The debit/credit-nature rule lives in `chart_of_account_model.dart`**, as
+   top-level `isNormallyDebit(AccountType)` and
+   `signedBalance(debit, credit, type)` — next to the enum they switch on.
+   `GLBalance.normalBalanceNature` delegates there. Tasks 1.3 and 1.4 must
+   import these rather than re-deriving the rule; the whole point of one
+   definition is that the Trial Balance and the Balance Sheet cannot disagree.
+
+2. **Every repository method takes an optional `DatabaseExecutor? executor`**,
+   not just the multi-table ones. Task 1.3 has to post a sale's GL lines inside
+   the sale's own transaction; without this the GL write would open a second
+   connection and commit independently of the sale it describes. Two tests
+   cover it (rollback leaves nothing behind, commit persists both entry and
+   balance).
+
+3. **`getAccountByCode()` and `getEntriesByFinancialYear()` added** beyond the
+   API the task file lists. The sale/purchase integrations address accounts by
+   code ('1000', '4000'), and the financial statements need a year's entries;
+   both would otherwise be re-implemented as ad-hoc SQL at the call site.
+
+4. **`recalculateBalance` updates the cached row in place** rather than
+   delete-then-insert, so a `gl_balances.id` stays stable. It also loads the
+   account to get its `AccountType` — the cached `balance` column is stored in
+   the account's natural direction, so it cannot be computed without knowing
+   the type.
+
+5. `GLEntry` has a **generative constructor with validation in its body**
+   (so it cannot be `const`, unlike the other models here). The invariant is
+   worth more than `const`: this is the one place that can stop a malformed
+   journal line before it reaches an append-only table.
 
 ## Open questions / notes for later tasks
 
