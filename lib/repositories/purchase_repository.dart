@@ -74,6 +74,17 @@ class PurchaseRepository {
 
         final itemJson = item.toJson();
         itemJson['product_id'] = productId;
+        // Fixed alongside this purchase-unit change: `purchase_id` was
+        // never set here — callers (e.g. PurchaseFormScreen) build each
+        // PurchaseItem via `.create()`, which always leaves `purchaseId`
+        // null, and it was never stamped with the just-inserted purchase's
+        // id before writing the row. Every purchase_items row was therefore
+        // written with purchase_id = NULL, so `getItemsByPurchase`, the
+        // edit-reversal query below, and delete()'s reversal query — all
+        // `WHERE purchase_id = ?` — matched nothing. Editing or deleting a
+        // purchase never actually reversed the original stock addition; it
+        // just piled a second addition on top.
+        itemJson['purchase_id'] = purchase.id;
         await txn.insert('purchase_items', itemJson);
 
         final double stockQtyToAdd = _stockQtyForItem(item);
@@ -220,6 +231,9 @@ class PurchaseRepository {
 
         final itemJson = item.toJson();
         itemJson['product_id'] = productId;
+        // See matching note in insertWithItems — purchase_id must be
+        // stamped explicitly, it's never set on the item itself.
+        itemJson['purchase_id'] = purchase.id;
         await txn.insert('purchase_items', itemJson);
 
         final double stockQtyToAdd = _stockQtyForItem(item);
