@@ -10,6 +10,9 @@ import '../../../services/advanced_report_service.dart';
 import 'generic_report_screen.dart';
 import 'party_statement_screen.dart';
 import 'item_detail_screen.dart';
+import 'trial_balance_screen.dart';
+import 'pl_statement_screen.dart';
+import 'balance_sheet_screen.dart';
 
 final _advancedReportService = AdvancedReportService();
 
@@ -336,6 +339,15 @@ class _MoreReportsTab extends StatelessWidget {
               ],
             ),
           ),
+        ]),
+        // Built from the General Ledger (`gl_entries`) rather than from
+        // sales/purchase tables like the reports above — these three are
+        // double-entry statements and pick their own financial year, so they
+        // don't take the shared from/to date filter.
+        _category(context, 'Accounts (General Ledger)', [
+          _reportTile(context, 'Trial Balance', () => const TrialBalanceScreen()),
+          _reportTile(context, 'Profit & Loss', () => const PLStatementScreen()),
+          _reportTile(context, 'Balance Sheet', () => const BalanceSheetScreen()),
         ]),
       ],
     );
