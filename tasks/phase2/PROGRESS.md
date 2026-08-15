@@ -11,7 +11,7 @@ Update this at the end of every run.
 |---|------|-------|
 | 2.1 | [01-bank-reconciliation.md](01-bank-reconciliation.md) — bank reconciliation | ✅ Done |
 | 2.2 | [02-loyalty-points.md](02-loyalty-points.md) — loyalty gap-closing | ✅ Done |
-| 2.3 | [03-payment-gateways.md](03-payment-gateways.md) — payment gateways | ⬜ Not started |
+| 2.3 | [03-payment-gateways.md](03-payment-gateways.md) — payment gateways | ✅ Done |
 | 2.4 | [04-collections-commission.md](04-collections-commission.md) — collections/commission | ⬜ Not started |
 
 These four are largely independent — do the next one fresh, there is no
@@ -52,6 +52,10 @@ Phase 1's numbers still hold for analyze; the test count has grown.
   unchanged, nothing landed on `main` in between.
 - After Task 2.2: **182 issues (0 new,** identical to baseline by file+rule**)**,
   **365 passing** (+57 new).
+- Start of the Task 2.3 run, re-measured: **182 issues, 0 errors**, **365 passing** —
+  unchanged again, nothing landed on `main` between runs.
+- After Task 2.3: **182 issues (0 new,** identical to baseline by file+rule**)**,
+  **455 passing** (+90 new).
 
 Compare analyze by file + rule, not raw line, since inserting lines shifts
 every issue below them:
@@ -63,11 +67,12 @@ diff <(norm /tmp/analyze_baseline.txt) <(norm /tmp/analyze_after.txt)
 
 ### Migration version — read fresh, every run
 
-Task 2.1 took **v29**. At the start of the Task 2.2 run `AppConstants.dbVersion`
-read **29** and the highest `if (oldVersion < N)` block was 29, so Task 2.2 took
-**v30**. Both are now **30**. The next migration takes **31 — unless** another
-automation has landed one on `main` in the meantime, so re-check both places
-before writing a line of DDL. Do not trust this paragraph over the source.
+Task 2.1 took **v29**, Task 2.2 took **v30**, Task 2.3 took **v31** (checked
+fresh at the start of that run: `dbVersion` and the highest
+`if (oldVersion < N)` block both read 30). Both now read **31**. The next
+migration takes **32 — unless** another automation has landed one on `main` in
+the meantime, so re-check both places before writing a line of DDL. Do not
+trust this paragraph over the source.
 
 ## Completed work
 
@@ -350,35 +355,223 @@ Listed rather than silently dropped:
   the till that their points are about to lapse; the warning is only on the
   customer history screen a manager opens.
 
+### Task 2.3 — Payment gateways (done)
+
+The Task 2.2 lesson repeated itself, in the opposite direction: this task
+file's stale assumption was about something that **doesn't** exist rather than
+something that already did. See deviation 1.
+
+New architecture doc:
+**[docs/PAYMENT_GATEWAY_ARCHITECTURE.md](../../docs/PAYMENT_GATEWAY_ARCHITECTURE.md)**
+— same reason as the other two. Trust it over the task file.
+
+Files added:
+- `lib/core/database/migrations/migration_v31.dart` — two tables, four
+  indexes, three `stores` credential columns.
+- `lib/models/payment_gateway_transaction_model.dart` (holds
+  `PaymentGatewayName` and `GatewayTransactionStatus`),
+  `payment_settlement_model.dart`.
+- `lib/services/gateways/payment_gateway.dart` (interface + result types +
+  `PaymentGatewayException` / `GatewayNotConfigured`),
+  `razorpay_gateway.dart`, `stub_gateways.dart`.
+- `lib/repositories/payment_gateway_repository.dart`
+- `lib/services/payment_gateway_service.dart`,
+  `payment_gateway_exceptions.dart`
+- `lib/features/payments/screens/payment_gateway_screen.dart`,
+  `lib/features/payments/widgets/gateway_collect_dialog.dart`
+- `docs/PAYMENT_GATEWAY_ARCHITECTURE.md`
+- `test/repositories/payment_gateway_repository_test.dart` (20 tests),
+  `test/services/razorpay_gateway_test.dart` (26 tests),
+  `test/services/payment_gateway_service_test.dart` (44 tests)
+
+Files changed:
+- `lib/core/database/database_helper.dart` — `if (oldVersion < 31)` + import.
+- `lib/core/database/migrations/migration_v1.dart` — calls `MigrationV31.up()`
+  + import.
+- `lib/constants/app_constants.dart` — `dbVersion` 30 → 31.
+- `lib/services/gl_service.dart` — `bankAccountCode`,
+  `gatewayPaymentReferenceType`, `postGatewayPaymentEntries()`.
+- `lib/repositories/store_repository.dart` — `get/updateRazorpayConfig`.
+- `lib/features/settings/screens/settings_screen.dart` — credentials tile.
+- `lib/features/billing/widgets/payment_dialog.dart` — gateway method +
+  Collect flow, `onPay` gained a 5th argument.
+- `lib/features/billing/screens/billing_screen.dart` — links gateway payments
+  to the sale after `processSale`.
+- `lib/core/routes/app_router.dart`, `lib/core/widgets/app_scaffold.dart` —
+  `/payment-gateways` route + sidebar tile.
+
+Decisions and deviations, with reasons:
+
+1. **The `payments` table was dead, and this module is its first writer.**
+   The big one. The task file states that "every sale's payment already flows
+   through this" table — it does not. `payments` shipped in `MigrationV1` and
+   had **zero readers and zero writers** anywhere in `lib/` or `test/`; sales
+   record their split in the `sales.payment_methods` JSON map. The task file
+   also rules out adding a second `sale_id`-linked table, correctly. So
+   `PaymentGatewayRepository` writes a real `payments` row for a gateway
+   payment and hangs the gateway detail off it one-to-one, which is the shape
+   the task file describes. **The consequence is that `payments` is populated
+   for gateway payments and nothing else** — listed as a gap below, and stated
+   in the architecture doc, because anyone later treating that table as the
+   complete record of money taken will be wrong. Making it authoritative for
+   all payment types means rewriting the billing path and backfilling
+   history — a much larger change than "add a payment gateway".
+
+2. **Collection and sale-linking are split, because the foreign key forces
+   it.** `payments.sale_id` really does reference `sales(id)`, and this app
+   collects payment inside the payment dialog *before*
+   `BillingService.processSale` writes the sale. `createOrder` therefore takes
+   no `saleId`, and `attachSale` joins them afterwards. Found by a test
+   failing on the constraint, not by reading — worth stating because the task
+   file's design implicitly assumes the sale already exists. The link step in
+   `billing_screen.dart` is deliberately non-fatal: the money is already taken
+   and recorded by then, and failing a completed sale over a missing link
+   would be far worse than a row someone joins up by hand.
+
+3. **Migration version 31**, per the dynamic rule; `dbVersion` and the highest
+   `onUpgrade` block both read 30 at the start of this run.
+
+4. **A gateway payment posts no revenue — only an asset reclassification.**
+   `postGatewayPaymentEntries` debits `1010` Bank and credits `1000` Cash, or
+   `1100` Receivable when `settlesReceivable` is set. Phase 1's
+   `postSaleEntries` already credited `4000` for the whole bill; posting
+   revenue again would double the day's takings. There is an explicit test
+   that `4000` stays at zero across a gateway payment, because that is the
+   obvious way to get this wrong.
+
+5. **Verification is signature *plus* a server-side status check.** A
+   signature proves who sent the callback, not that money moved — so a valid
+   signature over a *failed* payment does not settle a sale. Relatedly,
+   Razorpay's `authorized` maps to `pending`, not success: money authorised is
+   not money taken, and letting a customer leave on an authorisation that is
+   never captured is a real way for a shop to lose money.
+
+6. **`signatureValid` is a field on `GatewayVerification`, not something
+   inferred from the failure message.** It was briefly the latter; matching on
+   prose would have broken the moment the wording changed, and the two
+   failures need genuinely different handling — a bad signature is a security
+   event, and the claimed payment id is deliberately **not** stamped onto the
+   failed row, so an unverified caller cannot burn a real payment id.
+
+7. **Idempotency is enforced twice.** `gateway_transaction_id` is UNIQUE in the
+   schema, and `verifyAndRecordPayment` checks for a duplicate before spending
+   a network call. Both are tested, including that the constraint catches what
+   gets past the check. A replayed callback crediting the shop twice is the
+   failure worth designing against here.
+
+8. **Credentials live on the `stores` row**, edited in Settings, following the
+   Ollama/printer pattern — no key or secret anywhere in the repo, as the task
+   file requires. Note it asks to "follow how this app already handles
+   secrets, e.g. Supabase": that one uses hardcoded placeholder constants in
+   `supabase_sync_service.dart`, which is exactly what the same paragraph
+   forbids, so the settings pattern was followed instead. **The keys are not
+   encrypted at rest** — see the gap below.
+
+9. **Only Razorpay is real.** PayPal and Square implement the interface and
+   throw `UnimplementedError`, with `isConfigured` permanently false so they
+   can never reach the till — per the task file, and tested.
+
+10. **Partial refunds are refused rather than approximated.** The GL posting is
+    a two-line reclassification; reversing part of it means deciding how a
+    part-refunded sale is represented, which is a sale-level accounting
+    question. `SalesReturnService` is where a partial refund belongs.
+
+11. **The cashier types the payment id and signature by hand.** A phone app
+    would use Razorpay's checkout SDK; this is a desktop POS with no such SDK.
+    Nothing typed is trusted — it goes straight to signature verification
+    against the shop's own secret and then a status check, so an invented
+    value records a failed attempt and cannot settle a bill.
+
+12. **UI lives in `lib/features/payments/`**, not `features/reports/` — same
+    reasoning as Task 2.1 deviation 7 and Task 2.2 deviation 10.
+
+13. **`/payment-gateways` is manager-gated and NOT in
+    `_accountantAllowedRoutes`** — the same open policy question flagged twice
+    before, and the same answer. **If accountants should see gateway
+    settlements, add `/payment-gateways` to that set** — a human's call.
+
+### Known gaps left open by Task 2.3
+
+Listed rather than silently dropped:
+
+- **`payments` is populated only for gateway payments.** See deviation 1. The
+  honest completion is to write `payments` rows for every method from
+  `BillingService` and backfill, which is its own task. Until then, do not
+  read both `payments` and `sales.payment_methods` and assume they agree.
+- **Settlement fees are not posted to the GL.** The money reached `1010` Bank
+  when each payment was verified; a payout is the gateway moving its own
+  float. The fee is a real expense, but booking it needs a gateway-clearing
+  account plus a posting rule for the gap between "collected" and "deposited"
+  — an accounting decision for a human, and the chart of accounts has no
+  payment-processing-fee account either. `reconcileSettlement` surfaces the
+  fee and the screen says plainly that it is not in the ledger.
+- **No webhook listener.** This app has no server and no background job runner
+  (re-confirmed, same as Task 2.2's expiry finding), so a payment whose
+  callback never arrives is recovered by a cashier pressing "Check with
+  gateway". `refreshStatus` deliberately cannot settle a payment it finds
+  successful — doing so would skip the signature check.
+- **Settlement figures are entered by hand**, not fetched from Razorpay's
+  settlements API. Fine at shop scale; an obvious next increment.
+- **Gateway keys are not encrypted at rest.** They are out of source control,
+  which is the thing that actually matters, but the SQLite file on the till
+  holds the key secret in plain text. Encrypting it needs a key this app has
+  nowhere to keep. Use a restricted key; treat the till's disk as sensitive.
+- **Reconciliation windows on the settlement's own calendar day.** A gateway
+  batches on its cut-off, so a late-evening payment can land in the next day's
+  payout and shows as a variance. Reported rather than treated as an error,
+  same stance as Task 2.1 — but it means `agrees` will often be false in
+  normal operation.
+- **No widget tests** for the new screen or dialog — same local convention as
+  Tasks 2.1 and 2.2.
+- **The Phase 1 gap that sale cancellations don't post to GL still bites
+  here**: a cancelled sale paid by gateway leaves the reclassification entry
+  in place with no sale reversal against it. Nothing in Task 2.3 can fix that.
+
 ## Branch / PR state
 
-Both Task 2.1 and Task 2.2 are on **`feature/phase2-enterprise`**, and PR
-**#2** covers both.
+Tasks 2.1, 2.2 and 2.3 are all on **`feature/phase2-enterprise`**, and PR
+**#2** covers all three.
 
 The run instructions suggested a PR per module. That was not done, and the
 reason is `tasks/phase2/PROGRESS.md` itself: it exists only on this branch, not
 on `main`. Two module branches cut from `main` would each create their own copy
 of this file and conflict on merge, losing exactly the cross-run state the
 protocol depends on. Keeping one branch — which is also what step 2 of the run
-instructions names explicitly — avoids that. PR #2's title and body were
-updated to say it carries both modules rather than leaving it labelled as
-Task 2.1 only.
+instructions names explicitly — avoids that.
 
-**If per-module PRs are wanted**, the fix is to land `tasks/phase2/PROGRESS.md`
-on `main` first; after that, module branches can be cut independently.
+By the Task 2.3 run there was a second reason: **PR #2 was still open and
+unmerged**, so a branch cut from `main` for Task 2.3 would not have contained
+Tasks 2.1 and 2.2 at all, and the two PRs would have raced on
+`app_router.dart`, `app_scaffold.dart`, `database_helper.dart`,
+`migration_v1.dart` and `app_constants.dart` — every one of which all three
+modules touch. Stacking on the open branch is the lower-risk option while #2
+is unmerged. PR #2's title and body are updated each run to say what it
+actually carries.
+
+**If per-module PRs are wanted**, the fix is to merge PR #2 (which lands
+`tasks/phase2/PROGRESS.md` on `main`); after that, module branches can be cut
+independently — though the shared migration/router files will still need
+sequencing.
 
 ## Next run
 
-Start Task 2.3 ([03-payment-gateways.md](03-payment-gateways.md)). Nothing from
-Task 2.2 blocks it — the four modules are independent.
+Start Task 2.4 ([04-collections-commission.md](04-collections-commission.md)),
+the last of the four. Nothing from 2.1–2.3 blocks it, but it is the one module
+the README flags as touching what the others do, so read it against reality
+first.
 
 Before writing any DDL, re-read `AppConstants.dbVersion` and the highest
-`if (oldVersion < N)` block. They are **30** as of this run; assume nothing.
+`if (oldVersion < N)` block. They are **31** as of this run; assume nothing.
 
-**Repeat the Task 2.2 lesson on Task 2.3 and 2.4**: this codebase has more
-already built than the task files credit. Before implementing anything a task
-file describes as new, grep for it. Task 2.2's file called for a new events
-table that was already there in all but five columns, and the README's own
-warning about the stale audit had itself missed that. Check
-`docs/GL_ARCHITECTURE.md` and `docs/LOYALTY_ARCHITECTURE.md` first — those
-describe reality.
+**The task files are unreliable about this codebase in both directions.**
+Task 2.2's file called for an events table that already existed in all but
+five columns. Task 2.3's asserted that a `payments` table was already carrying
+every sale's payment when in fact nothing had ever written to it. So: before
+implementing anything a task file calls new, grep for it — and before building
+on anything a task file calls existing, grep for its *writers*, not just its
+schema. Task 2.4 depends on `Sale.salesmanId`; the run instructions single that
+out as a prerequisite worth confirming, and it is now clear why.
+
+`docs/GL_ARCHITECTURE.md`, `docs/LOYALTY_ARCHITECTURE.md` and
+`docs/PAYMENT_GATEWAY_ARCHITECTURE.md` describe reality. Trust them over the
+task files.
