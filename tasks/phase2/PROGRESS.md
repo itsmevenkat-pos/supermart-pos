@@ -751,6 +751,39 @@ The `flutter pub get` churn behaved exactly as documented above
 (`analysis_options.yaml` + `pubspec.lock` only); both were `git checkout --`'d
 and nothing from them is in any commit.
 
+## Second re-verification (later firing of 2026-08-15, Flutter 3.47.0)
+
+Another scheduled firing, again with **no incomplete task to pick up**. Since
+the previous entry's numbers would be relayed to a human as "this is ready to
+merge", they were re-derived from a clean container rather than trusted. **No
+code was changed.** Everything matched:
+
+- `flutter analyze` — **182 issues, 0 errors** (161 info + 21 warning), the
+  baseline exactly. The only two hits matching a Phase 2 grep are in
+  `test/core/utils/loyalty_utils_test.dart`, which is **pre-existing** —
+  `loyalty_utils.dart` predates Phase 2 and Task 2.2 did not touch it. So the
+  previous entry's "0 issues in any Phase 2 file" stands.
+- `flutter test` (full suite) — **567 passing**, matching Task 2.4's count.
+- Migration chain re-read at the source: `dbVersion` **32**, contiguous
+  `oldVersion < 29/30/31/32` blocks, `MigrationV1` delegates to all four of
+  `MigrationV29..V32.up()`.
+- `origin/main` still at `43a0c32`; **33 remains the next free version**.
+- PR **#2** still **open**, `merged: false`, 10 commits, base `main` at
+  `43a0c32`, **still no reviews and no comments**.
+
+### Guidance for the firing after this one
+
+This is now the **second consecutive run that found nothing to do** and spent a
+full container (~1.5 GB SDK download, extraction, full suite) confirming an
+unchanged branch. That is waste worth avoiding. If the next firing finds all
+four modules done, `origin/main` still at `43a0c32`, and PR #2 still open with
+no review comments, then **the code cannot have changed** — check those three
+things cheaply, skip the SDK install and the re-verification, and end the run.
+
+Re-verify only if something actually moved: `main` advanced (which could force
+a migration renumber), a review comment landed, or someone pushed to the
+branch. A third identical re-verification proves nothing a `git log` doesn't.
+
 ## Next run
 
 **All four Phase 2 modules are implemented, tested and pushed.** There is no
