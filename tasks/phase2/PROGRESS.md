@@ -725,6 +725,32 @@ independently — though the shared migration/router files will still need
 sequencing. With all four modules now done, this matters less than it did:
 there is no fifth module queued behind the decision.
 
+## Re-verification (later run of 2026-08-15, Flutter 3.47.0)
+
+A scheduled firing found **no incomplete task to pick up** — all four modules
+were already done and pushed. Rather than stack unrequested work onto an
+already-large PR, the run re-verified the branch from a clean container. **No
+code was changed.**
+
+- `flutter analyze` — **182 issues, 0 errors** (161 info + 21 warning),
+  matching the baseline exactly, and **0 issues in any Phase 2 file**
+  (banking, loyalty, payment gateway, collections, commission).
+- `flutter test` (full suite) — **567 tests, all passed**, matching the count
+  recorded after Task 2.4.
+- Migration chain checked at the source rather than trusted from these notes:
+  `AppConstants.dbVersion` reads **32**, `onUpgrade` has contiguous
+  `oldVersion < 29/30/31/32` blocks, and `MigrationV1` delegates to all four
+  of `MigrationV29..V32.up()`, so `onCreate` and `onUpgrade` cannot diverge.
+- `origin/main` still at `43a0c32` (unmoved since the branch was cut), so no
+  renumbering is needed at merge time and **33 remains the next free version**.
+- PR **#2** still **open**, `merged: false`, `mergeable_state: clean`, 9
+  commits, base `main` at `43a0c32` — with **no reviews and no comments** on
+  it yet.
+
+The `flutter pub get` churn behaved exactly as documented above
+(`analysis_options.yaml` + `pubspec.lock` only); both were `git checkout --`'d
+and nothing from them is in any commit.
+
 ## Next run
 
 **All four Phase 2 modules are implemented, tested and pushed.** There is no
