@@ -12,7 +12,10 @@ Update this at the end of every run.
 | 2.1 | [01-bank-reconciliation.md](01-bank-reconciliation.md) — bank reconciliation | ✅ Done |
 | 2.2 | [02-loyalty-points.md](02-loyalty-points.md) — loyalty gap-closing | ✅ Done |
 | 2.3 | [03-payment-gateways.md](03-payment-gateways.md) — payment gateways | ✅ Done |
-| 2.4 | [04-collections-commission.md](04-collections-commission.md) — collections/commission | ⬜ Not started |
+| 2.4 | [04-collections-commission.md](04-collections-commission.md) — collections/commission | ✅ Done |
+
+**All four modules are complete.** See "Next run" at the bottom for what is
+left (PR state, and the open questions no single task could decide).
 
 These four are largely independent — do the next one fresh, there is no
 dependency chain to respect. **One module per run, fully**, not four started.
@@ -56,6 +59,10 @@ Phase 1's numbers still hold for analyze; the test count has grown.
   unchanged again, nothing landed on `main` between runs.
 - After Task 2.3: **182 issues (0 new,** identical to baseline by file+rule**)**,
   **455 passing** (+90 new).
+- Start of the Task 2.4 run, re-measured: **182 issues, 0 errors**, **455 passing** —
+  unchanged again, nothing landed on `main` between runs.
+- After Task 2.4: **182 issues (0 new,** identical to baseline by file+rule**)**,
+  **567 passing** (+112 new).
 
 Compare analyze by file + rule, not raw line, since inserting lines shifts
 every issue below them:
@@ -67,12 +74,12 @@ diff <(norm /tmp/analyze_baseline.txt) <(norm /tmp/analyze_after.txt)
 
 ### Migration version — read fresh, every run
 
-Task 2.1 took **v29**, Task 2.2 took **v30**, Task 2.3 took **v31** (checked
-fresh at the start of that run: `dbVersion` and the highest
-`if (oldVersion < N)` block both read 30). Both now read **31**. The next
-migration takes **32 — unless** another automation has landed one on `main` in
-the meantime, so re-check both places before writing a line of DDL. Do not
-trust this paragraph over the source.
+Task 2.1 took **v29**, Task 2.2 took **v30**, Task 2.3 took **v31**, Task 2.4
+took **v32** (checked fresh at the start of that run: `dbVersion` and the
+highest `if (oldVersion < N)` block both read 31). Both now read **32**. The
+next migration takes **33 — unless** another automation has landed one on
+`main` in the meantime, so re-check both places before writing a line of DDL.
+Do not trust this paragraph over the source.
 
 ## Completed work
 
@@ -527,6 +534,162 @@ Listed rather than silently dropped:
   here**: a cancelled sale paid by gateway leaves the reclassification entry
   in place with no sale reversal against it. Nothing in Task 2.3 can fix that.
 
+### Task 2.4 — Collections & commission (done)
+
+The last of the four. Both halves were genuinely unbuilt, as its task file
+claimed — the first task file this phase whose assumptions about the codebase
+held up in both directions. **`Sale.salesmanId` exists** (`sales.salesman_id`
+since `MigrationV1`); the run instructions singled it out as the prerequisite
+worth confirming before starting, and it is real.
+
+New architecture doc:
+**[docs/COLLECTIONS_COMMISSION_ARCHITECTURE.md](../../docs/COLLECTIONS_COMMISSION_ARCHITECTURE.md)**
+— same reason as the other three. Trust it over the task file.
+
+Files added:
+- `lib/core/database/migrations/migration_v32.dart` — three tables, six indexes.
+- `lib/models/collection_activity_model.dart` (holds `CollectionActivityType`
+  and `CollectionActivityStatus`), `commission_rule_model.dart` (holds
+  `CommissionTier` and `CommissionRuleType`), `commission_settlement_model.dart`.
+- `lib/repositories/collections_repository.dart`, `commission_repository.dart`
+- `lib/services/collections_service.dart`, `collections_exceptions.dart`,
+  `commission_service.dart`, `commission_exceptions.dart`
+- `lib/features/collections/screens/collections_screen.dart`,
+  `lib/features/commission/screens/commission_screen.dart`
+- `docs/COLLECTIONS_COMMISSION_ARCHITECTURE.md`
+- `test/repositories/collections_repository_test.dart` (14 tests),
+  `test/services/collections_service_test.dart` (43 tests),
+  `test/repositories/commission_repository_test.dart` (19 tests),
+  `test/services/commission_service_test.dart` (36 tests)
+
+Files changed:
+- `lib/core/database/database_helper.dart` — `if (oldVersion < 32)` + import.
+- `lib/core/database/migrations/migration_v1.dart` — calls `MigrationV32.up()`
+  + import.
+- `lib/constants/app_constants.dart` — `dbVersion` 31 → 32.
+- `lib/core/routes/app_router.dart`, `lib/core/widgets/app_scaffold.dart` —
+  `/collections` and `/commission` routes + sidebar tiles.
+
+No existing table gained a column and aging is derived rather than stored, so
+upgrading to v32 cannot change what any customer is shown to owe.
+
+Decisions and deviations, with reasons:
+
+1. **Migration version 32**, per the dynamic rule; `dbVersion` and the highest
+   `onUpgrade` block both read 31 at the start of this run.
+
+2. **The task file's `referenceType='Sale'` is wrong — the real value is
+   lowercase `'sale'`.** The aging walk does not filter on reference type at
+   all; it uses the **sign** of `amount`, which is the convention
+   `CustomerLedger`'s own doc comment defines and all five of its writers
+   follow (`sale`, `payment`, `advance`, `sales_return`, `exchange`,
+   `sale_cancellation`). Filtering on a string would have silently dropped
+   returns and cancellations from the receivable.
+
+3. **Aging buckets are lower-inclusive, upper-exclusive**, so a charge exactly
+   30 days old is in the 30-60 bucket. The task file asks for this call to be
+   made, documented and tested; it is pinned at 0, 29, 30, 59, 60, 89 and 90
+   days. The reasoning: the label names the age a debt has *reached*.
+
+4. **Payments clear the oldest debt first (FIFO), including the advance case.**
+   A charge arriving while the customer is in advance absorbs that advance
+   before counting as outstanding, mirroring how `CustomerRepository` already
+   splits a payment into "payment" and "advance" portions. The consequence
+   worth knowing: part-paying an old debt does *not* make the remainder recent
+   — the remnant keeps the original charge's date.
+
+5. **Commission excludes cancelled sales; `SalesmanRepository.getPerformance()`
+   was left counting them.** Paying commission on a reversed bill is wrong, so
+   the payable excludes them. The older performance leaderboard has counted
+   every row regardless of status since long before this module, and a
+   leaderboard and a payable are not obliged to agree. Changing it would alter
+   a number managers already read. **Flagged for a human**: if they should
+   agree, `getPerformance()` is the one to fix.
+
+6. **Tiers are marginal, not cliff-edged.** With bands 2% to ₹50,000 then 3%,
+   ₹60,000 earns ₹1,300 and not ₹1,800. A cliff would make one extra rupee of
+   sales worth ₹500, which is a direct incentive to game the period boundary.
+   Band upper bounds are exclusive, tested at exactly ₹50,000 and at ₹50,001.
+
+7. **No rule, several overlapping rules, or partial coverage are all
+   refusals.** A rule covering half a month gives no honest rate for the other
+   half, and two overlapping rules mean the shop's own records disagree about
+   what it promised to pay. Returning ₹0 would look like a salesman who sold
+   nothing. The exception messages say to settle the stretches separately.
+
+8. **Commission is not posted to the GL.** The chart of accounts has neither a
+   commission-expense nor an accrued-commission account (`5100 Salaries &
+   Wages` is the nearest, and commission is not salary). Adding accounts plus a
+   posting rule is an accounting decision for a human — the same call, for the
+   same reason, as the loyalty liability in 2.2 and gateway fees in 2.3.
+
+9. **`commission_ledger` gained two columns the task file's DDL omits.**
+   `salary_reference` because the same file's *prose* explicitly calls for it
+   ("a settlement record with a free-text `salary_reference` field"), and
+   `created_at` because every other table in this schema has one and without it
+   there is no way to tell when a settlement was raised as opposed to which
+   period it covers.
+
+10. **No `aging_analysis` and no `dunning_schedules` table**, as the task file
+    instructs. Aging is computed on demand; a scheduled reminder is a
+    `collection_activities` row with a future `scheduled_date`.
+
+11. **Reminders reuse `WhatsAppShareService.sendCampaignMessage`** — checked
+    for an existing hook before building anything, as the task file asks, and
+    found the one the Campaigns screen uses. It opens WhatsApp's compose
+    screen; the user presses send. **No SMS gateway was added**, per the task
+    file's explicit instruction; `sms` and `email` activity types exist for
+    recording a message sent by other means. The message builder is a pure,
+    separately tested function, and the sender is injectable the way
+    `PaymentGatewayService` takes a `gatewayOverride`.
+
+12. **Logging a `payment` activity records money collected; it does not move
+    it.** The payment still goes through `CustomerRepository.recordPayment`.
+    Keeping them apart stops the activity log from becoming a second,
+    disagreeing account of what a customer owes, and the UI says so on the
+    field.
+
+13. **UI lives in `lib/features/collections/` and `lib/features/commission/`**,
+    not `features/reports/` — same reasoning as Task 2.1 deviation 7.
+
+14. **`/collections` and `/commission` are manager-gated and NOT in
+    `_accountantAllowedRoutes`** — the same open policy question flagged in
+    2.1, 2.2 and 2.3, and the same answer. **If accountants should see the
+    receivable aging or the commission liability, add these two routes to that
+    set** — a human's call, now outstanding for four modules.
+
+### Known gaps left open by Task 2.4
+
+Listed rather than silently dropped:
+
+- **Sales returns are not deducted from commissionable sales.** Cancelled sales
+  are excluded (the sale is void), but a *returned* sale keeps its
+  `net_amount`. Deducting returns needs a product decision the task file does
+  not make: whether a return reduces the period it was returned in, or the
+  period the sale was made in. Matters most where returns are large and late.
+- **The service would accept overlapping settlement periods.** The
+  `UNIQUE(salesman_id, period_from, period_to)` constraint only catches an
+  exact repeat, so 1–31 Jan and 15 Jan–15 Feb would double-pay the overlap. The
+  screen offers whole calendar months only, which makes this unreachable
+  through the UI, but a caller could do it. The real fix is a range-overlap
+  check in `createSettlement`.
+- **Aging is a full ledger scan** walked in Dart. Correct, and fine at shop
+  scale; a shop with years of history and thousands of credit customers would
+  want it incrementalised.
+- **No SMS or email sending**, and WhatsApp only opens the compose screen. A
+  real messaging integration is separate and out of scope.
+- **No dunning automation.** No background job runner exists in this app
+  (re-confirmed for the third time — the only `Timer.periodic` is UI refresh in
+  `billing_screen.dart`). Overdue follow-ups surface when a manager opens the
+  screen; nothing chases anyone on its own.
+- **The Phase 1 gap that sale cancellations don't post to GL still bites**, in
+  a way worth stating precisely: `customer_ledger` *does* record cancellations,
+  so the aging report is right — but the GL and the receivable will disagree
+  for any cancelled credit sale. Reconcile against the ledger, not the GL,
+  until that Phase 1 follow-up lands.
+- **No widget tests** for the two new screens — same local convention as
+  2.1–2.3.
+
 ## Branch / PR state
 
 Tasks 2.1, 2.2 and 2.3 are all on **`feature/phase2-enterprise`**, and PR
@@ -548,30 +711,64 @@ modules touch. Stacking on the open branch is the lower-risk option while #2
 is unmerged. PR #2's title and body are updated each run to say what it
 actually carries.
 
+**Task 2.4 was checked against this again rather than assumed.** At the start
+of that run PR #2 was still `open`, `merged: false`, `mergeable_state: clean`,
+7 commits, base `main` at `43a0c32` — so both reasons still held, unchanged,
+and Task 2.4 stacked onto the same branch and the same PR. Task 2.4 touches
+`app_router.dart`, `app_scaffold.dart`, `database_helper.dart`,
+`migration_v1.dart` and `app_constants.dart`, the same five files, so a
+separate branch would have raced on every one of them.
+
 **If per-module PRs are wanted**, the fix is to merge PR #2 (which lands
 `tasks/phase2/PROGRESS.md` on `main`); after that, module branches can be cut
 independently — though the shared migration/router files will still need
-sequencing.
+sequencing. With all four modules now done, this matters less than it did:
+there is no fifth module queued behind the decision.
 
 ## Next run
 
-Start Task 2.4 ([04-collections-commission.md](04-collections-commission.md)),
-the last of the four. Nothing from 2.1–2.3 blocks it, but it is the one module
-the README flags as touching what the others do, so read it against reality
-first.
+**All four Phase 2 modules are implemented, tested and pushed.** There is no
+next task in `tasks/phase2/`. What is actually outstanding is a human's
+attention, not more code:
 
-Before writing any DDL, re-read `AppConstants.dbVersion` and the highest
-`if (oldVersion < N)` block. They are **31** as of this run; assume nothing.
+1. **PR #2 needs review and merge.** It now carries all four modules — roughly
+   14k added lines across ~60 files, and every Phase 2 migration (v29–v32).
+   Nothing further should be stacked on this branch without a good reason;
+   at four modules the PR is already large enough to be hard to review.
+2. **Four decisions were flagged for a human and none has been answered.**
+   They are listed per-task above; the one raised in every single module is
+   whether `_accountantAllowedRoutes` should gain `/banking`,
+   `/banking/reconcile`, `/loyalty`, `/payment-gateways`, `/collections` and
+   `/commission`. That set is documented as a read-only slice and all six
+   write, so widening it is a policy call about what an accountant-role user
+   may change.
+3. **Three liabilities/expenses sit outside the GL** — loyalty points (2.2),
+   gateway settlement fees (2.3), commission (2.4). Each was left out for the
+   same reason: the Phase 1 chart of accounts has no suitable account, and
+   adding one plus a posting rule is an accounting decision. If someone wants
+   the Balance Sheet to be complete, that is one coherent follow-up task
+   covering all three, not three separate ones.
+4. **The Phase 1 gap that sale cancellations don't post to GL is now load-
+   bearing in three modules** (2.1, 2.3, 2.4). It is the single highest-value
+   Phase 1 follow-up.
 
-**The task files are unreliable about this codebase in both directions.**
-Task 2.2's file called for an events table that already existed in all but
-five columns. Task 2.3's asserted that a `payments` table was already carrying
-every sale's payment when in fact nothing had ever written to it. So: before
+Before writing any DDL in any future work, re-read `AppConstants.dbVersion`
+and the highest `if (oldVersion < N)` block. They are **32** as of this run;
+assume nothing.
+
+**The task files were unreliable about this codebase in both directions.**
+Task 2.2's called for an events table that already existed in all but five
+columns. Task 2.3's asserted that a `payments` table was already carrying
+every sale's payment when nothing had ever written to it. Task 2.4's was the
+one that held up — both halves were genuinely unbuilt and `Sale.salesmanId`
+was genuinely there — but it still got a detail wrong (`referenceType='Sale'`
+is really `'sale'`) that would have silently dropped returns and cancellations
+from the receivable had it been trusted. So the rule stands: before
 implementing anything a task file calls new, grep for it — and before building
 on anything a task file calls existing, grep for its *writers*, not just its
-schema. Task 2.4 depends on `Sale.salesmanId`; the run instructions single that
-out as a prerequisite worth confirming, and it is now clear why.
+schema.
 
-`docs/GL_ARCHITECTURE.md`, `docs/LOYALTY_ARCHITECTURE.md` and
-`docs/PAYMENT_GATEWAY_ARCHITECTURE.md` describe reality. Trust them over the
-task files.
+`docs/GL_ARCHITECTURE.md`, `docs/LOYALTY_ARCHITECTURE.md`,
+`docs/PAYMENT_GATEWAY_ARCHITECTURE.md` and
+`docs/COLLECTIONS_COMMISSION_ARCHITECTURE.md` describe reality. Trust them
+over the task files.
