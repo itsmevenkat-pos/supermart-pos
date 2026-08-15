@@ -29,6 +29,11 @@ class PurchaseItem extends Equatable {
   final int packCount;
   final String? batchNo;
   final int? expiryDate;
+  /// When this batch was packed/manufactured — distinct from [expiryDate]
+  /// and from the purchase's own `createdAt` (when it was RECEIVED into
+  /// this shop, not when the manufacturer packed it). Printed on barcode
+  /// labels alongside Expiry Date.
+  final int? packingDate;
   final int freeQuantity;
   final double taxAmount;
   final double discountAmount;
@@ -76,6 +81,7 @@ class PurchaseItem extends Equatable {
     this.packCount = 0,
     this.batchNo,
     this.expiryDate,
+    this.packingDate,
     this.freeQuantity = 0,
     this.taxAmount = 0,
     this.discountAmount = 0,
@@ -109,6 +115,7 @@ class PurchaseItem extends Equatable {
     int packCount = 0,
     String? batchNo,
     int? expiryDate,
+    int? packingDate,
     int freeQuantity = 0,
     double taxAmount = 0,
     double discountAmount = 0,
@@ -142,6 +149,7 @@ class PurchaseItem extends Equatable {
       packCount: packCount,
       batchNo: batchNo,
       expiryDate: expiryDate,
+      packingDate: packingDate,
       freeQuantity: freeQuantity,
       taxAmount: taxAmount,
       discountAmount: discountAmount,
@@ -174,6 +182,7 @@ class PurchaseItem extends Equatable {
     int? packCount,
     String? batchNo,
     int? expiryDate,
+    int? packingDate,
     int? freeQuantity,
     double? taxAmount,
     double? discountAmount,
@@ -208,6 +217,7 @@ class PurchaseItem extends Equatable {
       packCount: packCount ?? this.packCount,
       batchNo: batchNo ?? this.batchNo,
       expiryDate: expiryDate ?? this.expiryDate,
+      packingDate: packingDate ?? this.packingDate,
       freeQuantity: freeQuantity ?? this.freeQuantity,
       taxAmount: taxAmount ?? this.taxAmount,
       discountAmount: discountAmount ?? this.discountAmount,
@@ -244,6 +254,7 @@ class PurchaseItem extends Equatable {
         'pack_count': packCount,
         'batch_no': batchNo,
         'expiry_date': expiryDate,
+        'packing_date': packingDate,
         'free_quantity': freeQuantity,
         'tax_amount': taxAmount,
         'discount_amount': discountAmount,
@@ -279,6 +290,7 @@ class PurchaseItem extends Equatable {
         packCount: map['pack_count'] as int? ?? 0,
         batchNo: map['batch_no'] as String?,
         expiryDate: map['expiry_date'] as int?,
+        packingDate: map['packing_date'] as int?,
         freeQuantity: map['free_quantity'] as int? ?? 0,
         taxAmount: (map['tax_amount'] as num?)?.toDouble() ?? 0,
         discountAmount: (map['discount_amount'] as num?)?.toDouble() ?? 0,

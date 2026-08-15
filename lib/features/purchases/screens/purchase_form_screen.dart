@@ -1220,6 +1220,22 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
                           },
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          key: ValueKey('pack_date_${item.id}'),
+                          initialValue: item.packingDate != null
+                              ? DateTime.fromMillisecondsSinceEpoch(item.packingDate! * 1000).toLocal().toString().split(' ')[0]
+                              : '',
+                          decoration: const InputDecoration(labelText: 'Packing date'),
+                          onChanged: (v) {
+                            try {
+                              final date = DateTime.parse(v);
+                              _updateItem(index, item.copyWith(packingDate: date.millisecondsSinceEpoch ~/ 1000));
+                            } catch (_) {}
+                          },
+                        ),
+                      ),
                     ],
                   ),
                   Row(

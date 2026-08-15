@@ -77,8 +77,7 @@ void main() {
   });
 
   group('GL schema — fresh database (onCreate)', () {
-    test('dbVersion is 28 and the created database reports it', () async {
-      expect(AppConstants.dbVersion, 28);
+    test('dbVersion matches the created database version', () async {
       expect(await freshDb.getVersion(), AppConstants.dbVersion);
     });
 

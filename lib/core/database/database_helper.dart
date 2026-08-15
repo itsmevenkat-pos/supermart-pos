@@ -14,6 +14,7 @@ import 'migrations/migration_v19.dart';
 import 'migrations/migration_v24.dart';
 import 'migrations/migration_v26.dart';
 import 'migrations/migration_v28.dart';
+import 'migrations/migration_v29.dart';
 import '../../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -538,6 +539,11 @@ class DatabaseHelper {
           // calls the same method, so onCreate and onUpgrade produce
           // identical GL schema and the same seeded accounts.
           await MigrationV28.up(db);
+        }
+
+        if (oldVersion < 29) {
+          // Packing Date on purchase lines / batch history — see MigrationV29.
+          await MigrationV29.up(db);
         }
       },
     );

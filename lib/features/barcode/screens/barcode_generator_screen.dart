@@ -3,28 +3,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/widgets/app_scaffold.dart';
 import '../../../models/product_model.dart';
 import '../../../repositories/product_repository.dart';
+import '../../../repositories/product_batch_repository.dart';
+import '../../../repositories/store_repository.dart';
 import '../../../services/barcode_label_service.dart';
 
-/// One entry in the "Item List" queue below the input panels — a product
-/// plus how many label copies to print for it, plus the cosmetic on-screen
-/// fields the user typed in for their own reference.
+/// One entry in the "Item List" queue below the input panels — a product,
+/// how many label copies to print for it, and the packing/expiry dates
+/// that'll print on the label (auto-suggested from the product's nearest
+/// batch, editable in case a specific batch needs different ones).
 class _BarcodeQueueItem {
   final Product product;
   final int copies;
-  final String? header;
-  final String? line1;
-  final String? line2;
-  final String? line3;
-  final String? line4;
+  final DateTime? packingDate;
+  final DateTime? expiryDate;
 
   const _BarcodeQueueItem({
     required this.product,
     required this.copies,
-    this.header,
-    this.line1,
-    this.line2,
-    this.line3,
-    this.line4,
+    this.packingDate,
+    this.expiryDate,
   });
 }
 
@@ -70,17 +67,19 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
   final _itemNameController = TextEditingController();
   final _itemCodeController = TextEditingController();
   final _noOfLabelsController = TextEditingController(text: '1');
-  final _headerController = TextEditingController();
-  final _line1Controller = TextEditingController();
-  final _line2Controller = TextEditingController();
-  final _line3Controller = TextEditingController();
-  final _line4Controller = TextEditingController();
 
   final _itemNameFocusNode = FocusNode();
 
   List<Product> _nameSuggestions = [];
   bool _showSuggestions = false;
   Product? _selectedProduct;
+
+  // Auto-suggested from the resolved product's nearest-expiry batch (see
+  // _suggestBatchDatesFor), but editable — a label being printed for a
+  // specific incoming batch may not match whatever batch happens to sort
+  // first.
+  DateTime? _packingDate;
+  DateTime? _expiryDate;
 
   bool _isBusy = false; // name/code lookups
   bool _isPrinting = false;
@@ -91,6 +90,10 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
   // newer one's results.
   int _searchRequestId = 0;
 
+  // Fetched once and cached — every label on this screen prints under the
+  // same shop, so there's no reason to re-query per item/print.
+  String _shopName = '';
+
   @override
   void initState() {
     super.initState();
@@ -99,6 +102,9 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
         setState(() => _showSuggestions = false);
       }
     });
+    StoreRepository().getStore().then((store) {
+      if (mounted) setState(() => _shopName = store.name);
+    });
   }
 
   @override
@@ -106,14 +112,56 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
     _itemNameController.dispose();
     _itemCodeController.dispose();
     _noOfLabelsController.dispose();
-    _headerController.dispose();
-    _line1Controller.dispose();
-    _line2Controller.dispose();
-    _line3Controller.dispose();
-    _line4Controller.dispose();
     _itemNameFocusNode.dispose();
     super.dispose();
   }
+
+  /// Called once a scan/search/typed code resolves to a real [Product] —
+  /// pre-fills Packing Date and Expiry Date from that product's
+  /// soonest-expiry batch, if it has one (same batch informs both — they're
+  /// two dates off the same incoming stock). Either field stays editable
+  /// afterward, so this is just a starting point, not a lock.
+  Future<void> _suggestBatchDatesFor(Product product) async {
+    try {
+      final batches = await ProductBatchRepository().getByProduct(product.id);
+      if (batches.isEmpty || !mounted) return;
+      final batch = batches.first;
+      setState(() {
+        if (batch.packingDate != null) {
+          _packingDate = DateTime.fromMillisecondsSinceEpoch(batch.packingDate! * 1000);
+        }
+        if (batch.expiryDate != null) {
+          _expiryDate = DateTime.fromMillisecondsSinceEpoch(batch.expiryDate! * 1000);
+        }
+      });
+    } catch (_) {
+      // No batch history yet, or a lookup hiccup — dates just stay
+      // whatever the user already has (usually blank), not a hard failure.
+    }
+  }
+
+  Future<void> _pickPackingDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _packingDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null && mounted) setState(() => _packingDate = picked);
+  }
+
+  Future<void> _pickExpiryDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _expiryDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null && mounted) setState(() => _expiryDate = picked);
+  }
+
+  String _formatDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   Future<void> _onNameChanged(String query) async {
     _selectedProduct = null;
@@ -145,8 +193,11 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
       _itemCodeController.text = product.barcode;
       _nameSuggestions = [];
       _showSuggestions = false;
+      _packingDate = null;
+      _expiryDate = null;
     });
     _itemNameFocusNode.unfocus();
+    _suggestBatchDatesFor(product);
   }
 
   Future<void> _lookupByCode(String code) async {
@@ -162,7 +213,10 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
           _selectedProduct = product;
           _itemNameController.text = product.displayName?.isNotEmpty == true ? product.displayName! : product.name;
           _itemCodeController.text = product.barcode;
+          _packingDate = null;
+          _expiryDate = null;
         });
+        _suggestBatchDatesFor(product);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('No item found for code "$trimmed"'), backgroundColor: Colors.red),
@@ -221,24 +275,18 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
           _BarcodeQueueItem(
             product: product!,
             copies: copies,
-            header: _headerController.text.trim().isEmpty ? null : _headerController.text.trim(),
-            line1: _line1Controller.text.trim().isEmpty ? null : _line1Controller.text.trim(),
-            line2: _line2Controller.text.trim().isEmpty ? null : _line2Controller.text.trim(),
-            line3: _line3Controller.text.trim().isEmpty ? null : _line3Controller.text.trim(),
-            line4: _line4Controller.text.trim().isEmpty ? null : _line4Controller.text.trim(),
+            packingDate: _packingDate,
+            expiryDate: _expiryDate,
           ),
         );
         _itemNameController.clear();
         _itemCodeController.clear();
         _noOfLabelsController.text = '1';
-        _headerController.clear();
-        _line1Controller.clear();
-        _line2Controller.clear();
-        _line3Controller.clear();
-        _line4Controller.clear();
         _selectedProduct = null;
         _nameSuggestions = [];
         _showSuggestions = false;
+        _packingDate = null;
+        _expiryDate = null;
       });
 
       if (mounted) {
@@ -271,12 +319,19 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
 
     setState(() => _isPrinting = true);
     try {
-      // BarcodeLabelService only bakes in name/displayName/barcode/mrp — it
-      // has no concept of the cosmetic Header/Line1-4 fields, so those are
-      // intentionally left out of the print job (see class docs above).
-      final expanded = <Product>[];
+      final expanded = <BarcodeLabelData>[];
       for (final item in _queueItems) {
-        expanded.addAll(List.filled(item.copies, item.product));
+        expanded.addAll(
+          List.filled(
+            item.copies,
+            BarcodeLabelData(
+              product: item.product,
+              shopName: _shopName,
+              packingDate: item.packingDate,
+              expiryDate: item.expiryDate,
+            ),
+          ),
+        );
       }
       final pdfBytes = await BarcodeLabelService.generateLabelSheet(expanded);
       if (!mounted) return;
@@ -392,52 +447,40 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
             ),
             const SizedBox(height: 12),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _headerController,
-                    decoration: const InputDecoration(labelText: 'Header'),
-                    onChanged: (_) => setState(() {}),
+                  flex: 2,
+                  child: InkWell(
+                    onTap: _pickPackingDate,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Packing Date (optional)',
+                        helperText: 'Auto-suggested from the item\'s nearest batch — tap to change',
+                        suffixIcon: Icon(Icons.calendar_today, size: 18),
+                      ),
+                      child: Text(_packingDate == null ? 'Not set' : _formatDate(_packingDate!)),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: TextField(
-                    controller: _line1Controller,
-                    decoration: const InputDecoration(labelText: 'Line 1'),
-                    onChanged: (_) => setState(() {}),
+                  flex: 2,
+                  child: InkWell(
+                    onTap: _pickExpiryDate,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Expiry Date (optional)',
+                        helperText: 'Auto-suggested from the item\'s nearest batch — tap to change',
+                        suffixIcon: Icon(Icons.calendar_today, size: 18),
+                      ),
+                      child: Text(_expiryDate == null ? 'Not set' : _formatDate(_expiryDate!)),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: TextField(
-                    controller: _line2Controller,
-                    decoration: const InputDecoration(labelText: 'Line 2'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _line3Controller,
-                    decoration: const InputDecoration(labelText: 'Line 3'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _line4Controller,
-                    decoration: const InputDecoration(labelText: 'Line 4'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
+                  flex: 3,
                   child: SizedBox(
                     height: 48,
                     child: ElevatedButton.icon(
@@ -519,8 +562,13 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
               child: Column(
                 children: [
                   Text(
-                    _headerController.text.trim().isEmpty ? '(Header)' : _headerController.text.trim(),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    _shopName.isEmpty ? '(Shop Name)' : _shopName,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                  Text(
+                    _itemNameController.text.trim().isEmpty ? '(Product Name)' : _itemNameController.text.trim(),
+                    style: const TextStyle(fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
@@ -534,18 +582,25 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _itemCodeController.text.trim().isEmpty ? '(Item Code)' : _itemCodeController.text.trim(),
+                    _itemCodeController.text.trim().isEmpty ? '(Barcode Number)' : _itemCodeController.text.trim(),
                     style: const TextStyle(fontSize: 11),
                   ),
                   const SizedBox(height: 8),
-                  for (final line in [
-                    _line1Controller.text.trim(),
-                    _line2Controller.text.trim(),
-                    _line3Controller.text.trim(),
-                    _line4Controller.text.trim(),
-                  ])
-                    if (line.isNotEmpty)
-                      Text(line, style: const TextStyle(fontSize: 10), textAlign: TextAlign.center),
+                  Text(
+                    'MRP Rs.${(_selectedProduct?.mrp ?? 0).toStringAsFixed(2)}   '
+                    'SP Rs.${(_selectedProduct?.retailPrice ?? 0).toStringAsFixed(2)}',
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (_packingDate != null || _expiryDate != null)
+                    Text(
+                      [
+                        if (_packingDate != null) 'Pkd: ${_formatDate(_packingDate!)}',
+                        if (_expiryDate != null) 'Exp: ${_formatDate(_expiryDate!)}',
+                      ].join('   '),
+                      style: const TextStyle(fontSize: 9),
+                      textAlign: TextAlign.center,
+                    ),
                 ],
               ),
             ),
@@ -575,12 +630,12 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
                 child: DataTable(
                   columns: const [
                     DataColumn(label: Text('Item Name')),
+                    DataColumn(label: Text('Barcode')),
+                    DataColumn(label: Text('MRP')),
+                    DataColumn(label: Text('Selling Price')),
+                    DataColumn(label: Text('Packing Date')),
                     DataColumn(label: Text('No of Labels')),
-                    DataColumn(label: Text('Header')),
-                    DataColumn(label: Text('Line 1')),
-                    DataColumn(label: Text('Line 2')),
-                    DataColumn(label: Text('Line 3')),
-                    DataColumn(label: Text('Line 4')),
+                    DataColumn(label: Text('Expiry Date')),
                     DataColumn(label: Text('')),
                   ],
                   rows: [
@@ -588,12 +643,14 @@ class _BarcodeGeneratorScreenState extends ConsumerState<BarcodeGeneratorScreen>
                       DataRow(
                         cells: [
                           DataCell(Text(_queueItems[i].product.name)),
+                          DataCell(Text(_queueItems[i].product.barcode)),
+                          DataCell(Text('Rs.${_queueItems[i].product.mrp.toStringAsFixed(2)}')),
+                          DataCell(Text('Rs.${_queueItems[i].product.retailPrice.toStringAsFixed(2)}')),
+                          DataCell(Text(
+                            _queueItems[i].packingDate == null ? '—' : _formatDate(_queueItems[i].packingDate!),
+                          )),
                           DataCell(Text('${_queueItems[i].copies}')),
-                          DataCell(Text(_queueItems[i].header ?? '')),
-                          DataCell(Text(_queueItems[i].line1 ?? '')),
-                          DataCell(Text(_queueItems[i].line2 ?? '')),
-                          DataCell(Text(_queueItems[i].line3 ?? '')),
-                          DataCell(Text(_queueItems[i].line4 ?? '')),
+                          DataCell(Text(_queueItems[i].expiryDate == null ? '—' : _formatDate(_queueItems[i].expiryDate!))),
                           DataCell(
                             IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),

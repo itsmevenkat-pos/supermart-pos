@@ -16,6 +16,9 @@ class ProductBatch extends Equatable {
   final double? costPrice;
   final double? sellingPrice;
   final int? expiryDate;
+  /// When this batch was packed/manufactured — distinct from [expiryDate]
+  /// and from [createdAt] (when it was received into this shop).
+  final int? packingDate;
   final double quantityReceived;
   final int createdAt;
 
@@ -28,6 +31,7 @@ class ProductBatch extends Equatable {
     this.costPrice,
     this.sellingPrice,
     this.expiryDate,
+    this.packingDate,
     required this.quantityReceived,
     this.createdAt = 0,
   });
@@ -40,6 +44,7 @@ class ProductBatch extends Equatable {
     double? costPrice,
     double? sellingPrice,
     int? expiryDate,
+    int? packingDate,
     required double quantityReceived,
   }) {
     return ProductBatch(
@@ -51,6 +56,7 @@ class ProductBatch extends Equatable {
       costPrice: costPrice,
       sellingPrice: sellingPrice,
       expiryDate: expiryDate,
+      packingDate: packingDate,
       quantityReceived: quantityReceived,
       createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
@@ -65,6 +71,7 @@ class ProductBatch extends Equatable {
         'cost_price': costPrice,
         'selling_price': sellingPrice,
         'expiry_date': expiryDate,
+        'packing_date': packingDate,
         'quantity_received': quantityReceived,
         'created_at': createdAt,
       };
@@ -78,6 +85,7 @@ class ProductBatch extends Equatable {
         costPrice: (map['cost_price'] as num?)?.toDouble(),
         sellingPrice: (map['selling_price'] as num?)?.toDouble(),
         expiryDate: map['expiry_date'] as int?,
+        packingDate: map['packing_date'] as int?,
         quantityReceived: (map['quantity_received'] as num?)?.toDouble() ?? 0,
         createdAt: map['created_at'] as int? ?? 0,
       );

@@ -157,6 +157,7 @@ class PurchaseRepository {
           costPrice: costPriceToSet,
           sellingPrice: sellingPriceToSet,
           expiryDate: item.expiryDate,
+          packingDate: item.packingDate,
           quantityReceived: stockQtyToAdd,
         );
         await _batchRepo.insert(batch, executor: txn);
@@ -304,6 +305,7 @@ class PurchaseRepository {
           costPrice: item.purchasePrice,
           sellingPrice: item.salesPrice,
           expiryDate: item.expiryDate,
+          packingDate: item.packingDate,
           quantityReceived: stockQtyToAdd,
         );
         await _batchRepo.insert(batch, executor: txn);

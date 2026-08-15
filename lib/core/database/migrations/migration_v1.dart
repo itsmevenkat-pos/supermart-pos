@@ -345,6 +345,7 @@ class MigrationV1 {
         pack_count INTEGER DEFAULT 0,
         batch_no TEXT,
         expiry_date INTEGER,
+        packing_date INTEGER,
         free_quantity INTEGER DEFAULT 0,
         tax_amount REAL DEFAULT 0,
         discount_amount REAL DEFAULT 0,
@@ -381,6 +382,7 @@ class MigrationV1 {
         cost_price REAL,
         selling_price REAL,
         expiry_date INTEGER,
+        packing_date INTEGER,
         quantity_received REAL NOT NULL,
         created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
