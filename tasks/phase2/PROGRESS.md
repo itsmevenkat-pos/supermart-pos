@@ -750,6 +750,14 @@ there is no fifth module queued behind the decision.
 
 ## Re-verification (later run of 2026-08-15, Flutter 3.47.0)
 
+> **Pre-merge history — version numbers below are superseded.** This entry and
+> the next one were written while PR #2 was still open and `main` was at
+> `43a0c32`. Both say "33 remains the next free version" and read `dbVersion`
+> as 32; the PR #2 merge renumbered everything, so **the next free version is
+> now 34**. See "Migration version — read fresh, every run" at the top, which
+> is the authoritative copy. Kept as-is because they record what was true when
+> checked, not what is true now.
+
 A scheduled firing found **no incomplete task to pick up** — all four modules
 were already done and pushed. Rather than stack unrequested work onto an
 already-large PR, the run re-verified the branch from a clean container. **No
@@ -775,6 +783,9 @@ The `flutter pub get` churn behaved exactly as documented above
 and nothing from them is in any commit.
 
 ## Second re-verification (later firing of 2026-08-15, Flutter 3.47.0)
+
+> **Pre-merge history — version numbers below are superseded**, same as the
+> entry above. Next free version is **34**, not the 33 stated here.
 
 Another scheduled firing, again with **no incomplete task to pick up**. Since
 the previous entry's numbers would be relayed to a human as "this is ready to
