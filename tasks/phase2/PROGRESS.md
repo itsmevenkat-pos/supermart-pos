@@ -876,8 +876,10 @@ outstanding is a human's attention, not more code:
 1. ~~PR #2 needs review and merge.~~ **Done** — merged 2026-08-15. Phase 2 is
    on `main` and verified there (see "Post-merge state" above). A future run
    that finds nothing to do here should confirm cheaply — all four modules
-   done, `main` at `948e43d` or later with no new Phase 2 work, no open Phase 2
-   PR — and end without installing the SDK.
+   done, `main` at `948e43d` or later with no new Phase 2 work, and the only
+   open Phase 2 PR being the docs-only **#3** — and end without installing the
+   SDK. **PR #3 is still open and needs a human to merge it**; until it does,
+   `main`'s copy of this file still carries the wrong next-migration number.
 2. **Four decisions were flagged for a human and none has been answered.**
    They are listed per-task above; the one raised in every single module is
    whether `_accountantAllowedRoutes` should gain `/banking`,
@@ -896,8 +898,10 @@ outstanding is a human's attention, not more code:
    Phase 1 follow-up.
 
 Before writing any DDL in any future work, re-read `AppConstants.dbVersion`
-and the highest `if (oldVersion < N)` block. They are **32** as of this run;
-assume nothing.
+and the highest `if (oldVersion < N)` block. Both read **33** as of the PR #2
+merge, so the next free version is **34** — see "Migration version — read
+fresh, every run" at the top, which is the authoritative copy. Assume nothing;
+read the source.
 
 **The task files were unreliable about this codebase in both directions.**
 Task 2.2's called for an events table that already existed in all but five
@@ -915,3 +919,41 @@ schema.
 `docs/PAYMENT_GATEWAY_ARCHITECTURE.md` and
 `docs/COLLECTIONS_COMMISSION_ARCHITECTURE.md` describe reality. Trust them
 over the task files.
+
+## Run of 2026-08-15 (later firing) — no work to do, confirmed cheaply
+
+This firing followed the previous entry's own instruction: confirm cheaply and
+end without installing the SDK if nothing has moved. Nothing had.
+
+What was checked, all from `git` and the source tree — **no Flutter install,
+no `analyze`, no `test`**, because a fourth identical re-verification of an
+unchanged tree proves nothing:
+
+- All four modules are `✅ Done` and merged. `tasks/phase2/` holds four task
+  files and no fifth.
+- `origin/main` is still **`948e43d`** — unmoved since the PR #2 merge, so no
+  new migration collision is possible and no renumber is owed.
+- `feature/phase2-enterprise` is ahead of `main` by exactly one docs commit
+  (`9aa5b58`) and behind by none. No rebase or merge was needed.
+- Migration chain re-read at the source, confirming PR #3's claims:
+  `dbVersion = 33`; `onUpgrade` guards contiguous through `oldVersion < 33`;
+  files present through `migration_v33.dart`; `MigrationV1` delegates to
+  V28, V30–V33 and correctly skips V29 (`packing_date` is inline in V1's
+  `CREATE TABLE`, verified at lines 352 and 389).
+
+**PR #3 is open, clean, and unreviewed** (docs-only, +98/−14, one file). It is
+the only open Phase 2 PR.
+
+Two stale spots in this file were fixed rather than left, since they are the
+same class of error PR #3 exists to correct:
+
+- The closing "Before writing any DDL" paragraph still read "They are **32** as
+  of this run" — contradicting the corrected section at the top, which reads 33
+  and next-free 34. A run skimming to the bottom would have taken a used
+  number. Now points at the authoritative section.
+- Item 1 of "Next run" told a future run to confirm "no open Phase 2 PR", which
+  by then was false — PR #3 was open. Reworded so the check can actually pass,
+  and so the next run knows #3 is what it is looking at.
+
+Nothing else changed. The three decisions in "Next run" (items 2–4) are still
+open and still need a human, not another run.
