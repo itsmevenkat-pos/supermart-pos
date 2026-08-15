@@ -16,6 +16,7 @@ import 'migrations/migration_v26.dart';
 import 'migrations/migration_v28.dart';
 import 'migrations/migration_v29.dart';
 import 'migrations/migration_v30.dart';
+import 'migrations/migration_v31.dart';
 import '../../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -556,6 +557,14 @@ class DatabaseHelper {
           // defaults to 0 (never expire), so this upgrade does not change any
           // customer's balance. MigrationV1 calls the same method.
           await MigrationV30.up(db);
+        }
+
+        if (oldVersion < 31) {
+          // Payment gateway transactions + settlements, and the per-store
+          // Razorpay credentials. Disabled by default with empty keys, so an
+          // upgrade never makes a till offer an unconfigured payment method.
+          // MigrationV1 calls the same method.
+          await MigrationV31.up(db);
         }
       },
     );

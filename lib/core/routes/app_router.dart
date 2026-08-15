@@ -15,6 +15,7 @@ import '../../features/coupons/screens/coupon_form_screen.dart';
 import '../../features/banking/screens/bank_account_list_screen.dart';
 import '../../features/banking/screens/bank_reconciliation_screen.dart';
 import '../../features/loyalty/screens/loyalty_summary_screen.dart';
+import '../../features/payments/screens/payment_gateway_screen.dart';
 import '../../features/stock_groups/screens/stock_group_list_screen.dart';
 import '../../features/stock_groups/screens/stock_group_detail_screen.dart';
 import '../../models/promotion_model.dart';
@@ -111,6 +112,7 @@ final Map<String, UserRole> _routeMinRole = {
   // human, not something to slip in with a feature.
   '/banking': UserRole.manager,
   '/loyalty': UserRole.manager,
+  '/payment-gateways': UserRole.manager,
   '/banking/reconcile': UserRole.manager,
   '/suppliers': UserRole.manager,
   '/suppliers/form': UserRole.manager,
@@ -270,6 +272,10 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(
       path: '/loyalty',
       builder: (context, state) => const LoyaltySummaryScreen(),
+    ),
+    GoRoute(
+      path: '/payment-gateways',
+      builder: (context, state) => const PaymentGatewayScreen(),
     ),
     GoRoute(
       // `extra`, not a `:id` path param — same reason as /stock-groups/detail

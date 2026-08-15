@@ -3,6 +3,7 @@ import '../../security/password_hasher.dart';
 import 'migration_v28.dart';
 import 'migration_v29.dart';
 import 'migration_v30.dart';
+import 'migration_v31.dart';
 
 class MigrationV1 {
   static Future<void> up(Database db) async {
@@ -729,5 +730,10 @@ class MigrationV1 {
     // there is an idempotent ADD COLUMN / CREATE INDEX IF NOT EXISTS, so
     // running it right after the CREATE is safe.
     await MigrationV30.up(db);
+
+    // Payment gateway tables + the store credential columns. Delegated for
+    // the same reason as the three above: one definition of the schema, used
+    // by both the fresh-create and the upgrade path.
+    await MigrationV31.up(db);
   }
 }

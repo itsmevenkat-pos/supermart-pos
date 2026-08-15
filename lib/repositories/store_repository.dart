@@ -347,6 +347,55 @@ class StoreRepository {
       whereArgs: [defaultStoreId],
     );
   }
+
+  /// Razorpay credentials for this store (Phase 2, Task 2.3).
+  ///
+  /// Stored here rather than in a checked-in constants file, following the
+  /// same pattern as the Ollama and printer configuration above — the task
+  /// file rules out hardcoded keys in the repo, and this is where this app
+  /// already keeps per-installation configuration.
+  ///
+  /// Disabled with empty keys by default, so a fresh install or an upgrade
+  /// never offers a payment method the shop has not set up. See
+  /// `docs/PAYMENT_GATEWAY_ARCHITECTURE.md` for the honest limits of holding
+  /// a gateway key secret in a local SQLite file.
+  Future<({bool enabled, String keyId, String keySecret})> getRazorpayConfig() async {
+    final db = await _dbHelper.database;
+    final result = await db.query(
+      'stores',
+      columns: ['razorpay_enabled', 'razorpay_key_id', 'razorpay_key_secret'],
+      where: 'id = ?',
+      whereArgs: [defaultStoreId],
+      limit: 1,
+    );
+    if (result.isEmpty) {
+      return (enabled: false, keyId: '', keySecret: '');
+    }
+    final row = result.first;
+    return (
+      enabled: (row['razorpay_enabled'] as int? ?? 0) == 1,
+      keyId: (row['razorpay_key_id'] as String?) ?? '',
+      keySecret: (row['razorpay_key_secret'] as String?) ?? '',
+    );
+  }
+
+  Future<void> updateRazorpayConfig({
+    required bool enabled,
+    required String keyId,
+    required String keySecret,
+  }) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'stores',
+      {
+        'razorpay_enabled': enabled ? 1 : 0,
+        'razorpay_key_id': keyId.trim(),
+        'razorpay_key_secret': keySecret.trim(),
+      },
+      where: 'id = ?',
+      whereArgs: [defaultStoreId],
+    );
+  }
 }
 
 final storeRepositoryProvider = Provider<StoreRepository>((ref) {
