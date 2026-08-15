@@ -130,6 +130,8 @@ class _Sidebar extends ConsumerWidget {
             if (isManager) _tile(context, 'Bank Accounts', Icons.account_balance, '/banking'),
             if (isManager) _tile(context, 'Loyalty Points', Icons.card_giftcard, '/loyalty'),
             if (isManager) _tile(context, 'Payment Gateways', Icons.credit_card, '/payment-gateways'),
+            if (isManager) _tile(context, 'Collections', Icons.receipt_long, '/collections'),
+            if (isManager) _tile(context, 'Commission', Icons.percent, '/commission'),
             _tile(context, 'Customers', Icons.people, '/customers'),
             if (isManager || isAccountant) _tile(context, 'Suppliers', Icons.business, '/suppliers'),
             if (isManager) _tile(context, 'Purchases', Icons.receipt_long, '/purchases'),

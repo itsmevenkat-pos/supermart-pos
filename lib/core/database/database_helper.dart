@@ -17,6 +17,7 @@ import 'migrations/migration_v28.dart';
 import 'migrations/migration_v29.dart';
 import 'migrations/migration_v30.dart';
 import 'migrations/migration_v31.dart';
+import 'migrations/migration_v32.dart';
 import '../../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -565,6 +566,15 @@ class DatabaseHelper {
           // upgrade never makes a till offer an unconfigured payment method.
           // MigrationV1 calls the same method.
           await MigrationV31.up(db);
+        }
+
+        if (oldVersion < 32) {
+          // Collection follow-ups plus the commission rule and settlement
+          // tables. Adds no columns to existing tables and computes aging
+          // from `customer_ledger` rather than storing it, so this upgrade
+          // cannot change what any customer is shown to owe. MigrationV1
+          // calls the same method.
+          await MigrationV32.up(db);
         }
       },
     );

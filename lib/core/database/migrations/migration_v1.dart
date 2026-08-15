@@ -4,6 +4,7 @@ import 'migration_v28.dart';
 import 'migration_v29.dart';
 import 'migration_v30.dart';
 import 'migration_v31.dart';
+import 'migration_v32.dart';
 
 class MigrationV1 {
   static Future<void> up(Database db) async {
@@ -735,5 +736,10 @@ class MigrationV1 {
     // the same reason as the three above: one definition of the schema, used
     // by both the fresh-create and the upgrade path.
     await MigrationV31.up(db);
+
+    // Collection activity + commission rule/settlement tables. Delegated for
+    // the same reason as the four above. Note this one references `salesmen`
+    // and `customers`, both created earlier in this method.
+    await MigrationV32.up(db);
   }
 }

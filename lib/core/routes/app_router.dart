@@ -16,6 +16,8 @@ import '../../features/banking/screens/bank_account_list_screen.dart';
 import '../../features/banking/screens/bank_reconciliation_screen.dart';
 import '../../features/loyalty/screens/loyalty_summary_screen.dart';
 import '../../features/payments/screens/payment_gateway_screen.dart';
+import '../../features/collections/screens/collections_screen.dart';
+import '../../features/commission/screens/commission_screen.dart';
 import '../../features/stock_groups/screens/stock_group_list_screen.dart';
 import '../../features/stock_groups/screens/stock_group_detail_screen.dart';
 import '../../models/promotion_model.dart';
@@ -113,6 +115,8 @@ final Map<String, UserRole> _routeMinRole = {
   '/banking': UserRole.manager,
   '/loyalty': UserRole.manager,
   '/payment-gateways': UserRole.manager,
+  '/collections': UserRole.manager,
+  '/commission': UserRole.manager,
   '/banking/reconcile': UserRole.manager,
   '/suppliers': UserRole.manager,
   '/suppliers/form': UserRole.manager,
@@ -276,6 +280,14 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(
       path: '/payment-gateways',
       builder: (context, state) => const PaymentGatewayScreen(),
+    ),
+    GoRoute(
+      path: '/collections',
+      builder: (context, state) => const CollectionsScreen(),
+    ),
+    GoRoute(
+      path: '/commission',
+      builder: (context, state) => const CommissionScreen(),
     ),
     GoRoute(
       // `extra`, not a `:id` path param — same reason as /stock-groups/detail
