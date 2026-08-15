@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import '../core/database/database_helper.dart';
 import '../models/sale_cancellation_model.dart';
 import '../models/sale_model.dart';
@@ -86,19 +87,58 @@ class SaleCancellationRepository {
         if (customerRows.isNotEmpty) {
           final currentBalance = (customerRows.first['outstanding_balance'] as num).toDouble();
 
-          // Same DB-backed setting SaleRepository used to earn these points
-          // (`stores.bonus_points_threshold`) — must match exactly or the
-          // reversal drifts from what was actually earned.
-          final storeRows = await txn.query(
-            'stores',
-            columns: ['bonus_points_threshold'],
-            where: 'id = ?',
-            whereArgs: [sale.storeId ?? 'store_default'],
+          // Reverse the points this sale *actually* moved, read back from the
+          // `bonus_points` row SaleRepository wrote for it.
+          //
+          // This used to recompute the figure from `netAmount /
+          // bonus_points_threshold`, which silently dropped the customer's
+          // tier multiplier (`pointMultiplierForRating`) — so cancelling a
+          // gold customer's bill clawed back half the points they had been
+          // given, and cancelling any bill left redeemed points destroyed.
+          // Since MigrationV30 the earn event is an authoritative record, so
+          // the reversal reads it instead of re-deriving it.
+          final pointsRows = await txn.query(
+            'bonus_points',
+            columns: ['points_earned', 'points_redeemed'],
+            where: 'sale_id = ? AND event_type = ?',
+            whereArgs: [sale.id, 'sale'],
             limit: 1,
           );
-          final bonusPointsThreshold =
-              storeRows.isNotEmpty ? (storeRows.first['bonus_points_threshold'] as num?)?.toDouble() ?? 300 : 300;
-          final pointsEarned = (sale.netAmount / bonusPointsThreshold).floor();
+
+          int pointsEarned;
+          int pointsRedeemed;
+          if (pointsRows.isNotEmpty) {
+            pointsEarned = (pointsRows.first['points_earned'] as num?)?.toInt() ?? 0;
+            pointsRedeemed = (pointsRows.first['points_redeemed'] as num?)?.toInt() ?? 0;
+          } else {
+            // Sales completed before `bonus_points` had a writer have no event
+            // to read. Fall back to the old un-multiplied estimate — it is what
+            // this code has always done for them and there is no way to
+            // recover the tier they held at the time. Redeemed points are not
+            // restored in this path for the same reason: nothing recorded them.
+            final storeRows = await txn.query(
+              'stores',
+              columns: ['bonus_points_threshold'],
+              where: 'id = ?',
+              whereArgs: [sale.storeId ?? 'store_default'],
+              limit: 1,
+            );
+            final bonusPointsThreshold =
+                storeRows.isNotEmpty ? (storeRows.first['bonus_points_threshold'] as num?)?.toDouble() ?? 300 : 300;
+            pointsEarned = (sale.netAmount / bonusPointsThreshold).floor();
+            pointsRedeemed = 0;
+          }
+
+          // Net effect on the balance: take back what the sale gave, hand back
+          // what it spent. Clamped so a reversal can never push a customer
+          // negative — if they have already spent the points this sale earned,
+          // the shop absorbs the difference rather than showing a debt in
+          // points that no screen in this app can represent.
+          final currentPoints = (customerRows.first['loyalty_points'] as num?)?.toInt() ?? 0;
+          var pointsDelta = pointsRedeemed - pointsEarned;
+          if (currentPoints + pointsDelta < 0) {
+            pointsDelta = -currentPoints;
+          }
 
           final ledgerRows = await txn.query(
             'customer_ledger',
@@ -112,23 +152,45 @@ class SaleCancellationRepository {
             newBalance = currentBalance - originalAmount;
           }
 
+          final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
           await txn.rawUpdate(
             '''
             UPDATE customers
             SET outstanding_balance = ?,
                 total_spent = total_spent - ?,
-                loyalty_points = loyalty_points - ?,
+                loyalty_points = loyalty_points + ?,
                 updated_at = ?
             WHERE id = ?
             ''',
             [
               newBalance,
               sale.netAmount,
-              pointsEarned,
-              DateTime.now().millisecondsSinceEpoch ~/ 1000,
+              pointsDelta,
+              now,
               sale.customerId,
             ],
           );
+
+          // Log the reversal as its own event rather than deleting the sale's
+          // earn row: the history should show that points were given and then
+          // taken back, not pretend the sale never happened. Points handed
+          // back to the customer become a fresh lot; the expiry window is
+          // deliberately left null so a refunded point is not on a shorter
+          // clock than the one it replaces.
+          if (pointsDelta != 0) {
+            await txn.insert('bonus_points', {
+              'id': const Uuid().v4(),
+              'customer_id': sale.customerId,
+              'sale_id': sale.id,
+              'points_earned': pointsDelta > 0 ? pointsDelta : 0,
+              'points_redeemed': pointsDelta < 0 ? -pointsDelta : 0,
+              'date': now,
+              'event_type': 'cancellation',
+              'note': 'Sale cancellation reversal',
+              'created_by_user_id': userId,
+            });
+          }
 
           if (ledgerRows.isNotEmpty) {
             final originalAmount = (ledgerRows.first['amount'] as num).toDouble();

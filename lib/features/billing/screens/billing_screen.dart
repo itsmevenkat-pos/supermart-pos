@@ -39,6 +39,7 @@ import '../../../core/permissions/price_override_guard.dart';
 import '../../../core/utils/quantity_utils.dart';
 import '../../../core/utils/weighing_barcode.dart';
 import '../../holds/screens/hold_bills_screen.dart'; // ✅ Import holds screen
+import '../../../services/payment_gateway_service.dart';
 
 class BillingScreen extends ConsumerStatefulWidget {
   const BillingScreen({super.key});
@@ -1403,7 +1404,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         customer: notifier.customer,
         preFilledMethod: preFilledMethod,
         startWithPartial: startWithPartial,
-        onPay: (payments, partialAmount, creditUsed, changeDue) async {
+        onPay: (payments, partialAmount, creditUsed, changeDue, gatewayTransactionIds) async {
           try {
             final authState = ref.watch(authProvider);
             final user = authState.user;
@@ -1444,6 +1445,23 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               remarks: null,
               loyaltyPointsRedeemed: notifier.loyaltyPointsToRedeem,
             );
+
+            // Gateway payments were collected and verified before this sale
+            // existed (payments.sale_id is a real foreign key, so it could
+            // not have been set earlier). Link them now that it does.
+            // Deliberately non-fatal: the money is already taken and recorded,
+            // and failing the completed sale over a missing link would be far
+            // worse than a payment row that needs joining up by hand.
+            for (final gatewayTransactionId in gatewayTransactionIds) {
+              try {
+                await PaymentGatewayService().attachSale(
+                  transactionId: gatewayTransactionId,
+                  saleId: sale.id,
+                );
+              } catch (_) {
+                // Left unlinked rather than losing the sale.
+              }
+            }
 
             final cashReceived = payments['cash'] != null ? payments['cash']! + changeDue : null;
 

@@ -12,6 +12,12 @@ import '../../features/promotions/screens/promotion_list_screen.dart';
 import '../../features/promotions/screens/promotion_form_screen.dart';
 import '../../features/coupons/screens/coupon_list_screen.dart';
 import '../../features/coupons/screens/coupon_form_screen.dart';
+import '../../features/banking/screens/bank_account_list_screen.dart';
+import '../../features/banking/screens/bank_reconciliation_screen.dart';
+import '../../features/loyalty/screens/loyalty_summary_screen.dart';
+import '../../features/payments/screens/payment_gateway_screen.dart';
+import '../../features/collections/screens/collections_screen.dart';
+import '../../features/commission/screens/commission_screen.dart';
 import '../../features/stock_groups/screens/stock_group_list_screen.dart';
 import '../../features/stock_groups/screens/stock_group_detail_screen.dart';
 import '../../models/promotion_model.dart';
@@ -101,6 +107,17 @@ final Map<String, UserRole> _routeMinRole = {
   '/coupons/form': UserRole.manager,
   '/stock-groups': UserRole.manager,
   '/stock-groups/detail': UserRole.manager,
+  // Manager, matching every other write-capable record-keeping route. Not in
+  // _accountantAllowedRoutes below: reconciliation is arguably an accountant's
+  // job, but that set is documented as a read/export-only slice and this would
+  // be the first route in it that writes. Widening it is a policy call for a
+  // human, not something to slip in with a feature.
+  '/banking': UserRole.manager,
+  '/loyalty': UserRole.manager,
+  '/payment-gateways': UserRole.manager,
+  '/collections': UserRole.manager,
+  '/commission': UserRole.manager,
+  '/banking/reconcile': UserRole.manager,
   '/suppliers': UserRole.manager,
   '/suppliers/form': UserRole.manager,
   '/purchases': UserRole.manager,
@@ -251,6 +268,33 @@ final routerProvider = Provider<GoRouter>((ref) {
       builder: (context, state) => CouponFormScreen(
         coupon: state.extra is Coupon ? state.extra as Coupon : null,
       ),
+    ),
+    GoRoute(
+      path: '/banking',
+      builder: (context, state) => const BankAccountListScreen(),
+    ),
+    GoRoute(
+      path: '/loyalty',
+      builder: (context, state) => const LoyaltySummaryScreen(),
+    ),
+    GoRoute(
+      path: '/payment-gateways',
+      builder: (context, state) => const PaymentGatewayScreen(),
+    ),
+    GoRoute(
+      path: '/collections',
+      builder: (context, state) => const CollectionsScreen(),
+    ),
+    GoRoute(
+      path: '/commission',
+      builder: (context, state) => const CommissionScreen(),
+    ),
+    GoRoute(
+      // `extra`, not a `:id` path param — same reason as /stock-groups/detail
+      // below: _routeMinRole matches the literal location, so a parameterized
+      // path would bypass the manager gate.
+      path: '/banking/reconcile',
+      builder: (context, state) => BankReconciliationScreen(bankAccountId: state.extra as String),
     ),
     GoRoute(
       path: '/stock-groups',

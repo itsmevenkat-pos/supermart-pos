@@ -1,6 +1,10 @@
 import 'package:sqflite/sqflite.dart';
 import '../../security/password_hasher.dart';
 import 'migration_v28.dart';
+import 'migration_v30.dart';
+import 'migration_v31.dart';
+import 'migration_v32.dart';
+import 'migration_v33.dart';
 
 class MigrationV1 {
   static Future<void> up(Database db) async {
@@ -718,5 +722,26 @@ class MigrationV1 {
     // identical on a fresh install and on an upgrade from v27, and a single
     // shared implementation is the only way that stays true as the GL evolves.
     await MigrationV28.up(db);
+
+    // Bank reconciliation tables — delegated for the same reason as the GL
+    // schema above: one implementation, so a fresh install and an upgrade can
+    // never disagree.
+    await MigrationV30.up(db);
+
+    // Loyalty event-log columns on `bonus_points` (created above) plus the
+    // store expiry setting. Delegated for the same reason; every statement in
+    // there is an idempotent ADD COLUMN / CREATE INDEX IF NOT EXISTS, so
+    // running it right after the CREATE is safe.
+    await MigrationV31.up(db);
+
+    // Payment gateway tables + the store credential columns. Delegated for
+    // the same reason as the three above: one definition of the schema, used
+    // by both the fresh-create and the upgrade path.
+    await MigrationV32.up(db);
+
+    // Collection activity + commission rule/settlement tables. Delegated for
+    // the same reason as the four above. Note this one references `salesmen`
+    // and `customers`, both created earlier in this method.
+    await MigrationV33.up(db);
   }
 }

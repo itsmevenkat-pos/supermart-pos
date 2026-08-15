@@ -30,6 +30,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late Future<({String prefix, String valueType})> _weighingConfigFuture;
   late Future<({String type, String? target, int? port, int charsPerLine})> _printerConfigFuture;
   late Future<({bool enabled, String baseUrl, String model})> _ollamaConfigFuture;
+  late Future<({bool enabled, String keyId, String keySecret})> _razorpayConfigFuture;
 
   @override
   void initState() {
@@ -43,6 +44,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _weighingConfigFuture = StoreRepository().getWeighingBarcodeConfig();
     _printerConfigFuture = StoreRepository().getPrinterConfig();
     _ollamaConfigFuture = StoreRepository().getOllamaConfig();
+    _razorpayConfigFuture = StoreRepository().getRazorpayConfig();
   }
 
   Future<void> _editInvoicePrefix(String current) async {
@@ -517,6 +519,93 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     setState(() => _ollamaConfigFuture = StoreRepository().getOllamaConfig());
   }
 
+  /// Razorpay credentials, stored per store rather than in the repo.
+  ///
+  /// The secret is shown masked by default because a POS screen is often in
+  /// customer view. It is stored in the local database in plain text — the
+  /// same as every other setting this app holds — which is worth knowing:
+  /// use a restricted key, and treat the till's disk as sensitive. See
+  /// `docs/PAYMENT_GATEWAY_ARCHITECTURE.md`.
+  Future<void> _editRazorpayConfig(({bool enabled, String keyId, String keySecret}) current) async {
+    var enabled = current.enabled;
+    var obscure = true;
+    final keyIdController = TextEditingController(text: current.keyId);
+    final keySecretController = TextEditingController(text: current.keySecret);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Payment Gateways'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Razorpay is the only gateway implemented in this app. PayPal and Square are '
+                    'not built — they will not appear at the till.',
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Accept Razorpay payments'),
+                    value: enabled,
+                    onChanged: (value) => setDialogState(() => enabled = value),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: keyIdController,
+                    decoration: const InputDecoration(
+                      labelText: 'Key id',
+                      hintText: 'rzp_live_XXXXXXXX',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: keySecretController,
+                    obscureText: obscure,
+                    decoration: InputDecoration(
+                      labelText: 'Key secret',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      suffixIcon: IconButton(
+                        icon: Icon(obscure ? Icons.visibility : Icons.visibility_off, size: 20),
+                        onPressed: () => setDialogState(() => obscure = !obscure),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'These are stored on this machine only and never leave it except to reach '
+                    'Razorpay. Keep the secret to a restricted key where you can.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    if (saved != true) return;
+
+    await StoreRepository().updateRazorpayConfig(
+      enabled: enabled,
+      keyId: keyIdController.text,
+      keySecret: keySecretController.text,
+    );
+    setState(() => _razorpayConfigFuture = StoreRepository().getRazorpayConfig());
+  }
+
   Future<void> _backupToLocalFolder() async {
     final destinationDir = await FilePicker.platform.getDirectoryPath(
       dialogTitle: 'Choose a backup destination (local folder or USB drive)',
@@ -867,6 +956,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: Text(subtitle),
                 trailing: const Icon(Icons.edit, size: 20),
                 onTap: config != null ? () => _editOllamaConfig(config) : null,
+              );
+            },
+          ),
+          const Divider(),
+          FutureBuilder<({bool enabled, String keyId, String keySecret})>(
+            future: _razorpayConfigFuture,
+            builder: (context, snapshot) {
+              final config = snapshot.data;
+              final subtitle = config == null
+                  ? 'Loading…'
+                  : !config.enabled
+                      ? 'Off — online payments are not offered at the till'
+                      : config.keyId.isEmpty || config.keySecret.isEmpty
+                          ? 'On, but the key id or secret is missing'
+                          : 'On — ${config.keyId}';
+              return ListTile(
+                leading: const Icon(Icons.credit_card),
+                title: const Text('Payment Gateways (Razorpay)'),
+                subtitle: Text(subtitle),
+                trailing: const Icon(Icons.edit, size: 20),
+                onTap: config != null ? () => _editRazorpayConfig(config) : null,
               );
             },
           ),

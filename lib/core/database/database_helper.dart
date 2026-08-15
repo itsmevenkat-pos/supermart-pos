@@ -15,6 +15,10 @@ import 'migrations/migration_v24.dart';
 import 'migrations/migration_v26.dart';
 import 'migrations/migration_v28.dart';
 import 'migrations/migration_v29.dart';
+import 'migrations/migration_v30.dart';
+import 'migrations/migration_v31.dart';
+import 'migrations/migration_v32.dart';
+import 'migrations/migration_v33.dart';
 import '../../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -544,6 +548,39 @@ class DatabaseHelper {
         if (oldVersion < 29) {
           // Packing Date on purchase lines / batch history — see MigrationV29.
           await MigrationV29.up(db);
+        }
+
+        if (oldVersion < 30) {
+          // Bank reconciliation: bank account master, imported statements and
+          // their lines — see MigrationV30. MigrationV1 calls the same method,
+          // so onCreate and onUpgrade produce identical schema.
+          await MigrationV30.up(db);
+        }
+
+        if (oldVersion < 31) {
+          // Loyalty point event log + expiry. Widens the existing
+          // `bonus_points` table rather than adding a second events table —
+          // see MigrationV31 for why. `stores.loyalty_points_expiry_days`
+          // defaults to 0 (never expire), so this upgrade does not change any
+          // customer's balance. MigrationV1 calls the same method.
+          await MigrationV31.up(db);
+        }
+
+        if (oldVersion < 32) {
+          // Payment gateway transactions + settlements, and the per-store
+          // Razorpay credentials. Disabled by default with empty keys, so an
+          // upgrade never makes a till offer an unconfigured payment method.
+          // MigrationV1 calls the same method.
+          await MigrationV32.up(db);
+        }
+
+        if (oldVersion < 33) {
+          // Collection follow-ups plus the commission rule and settlement
+          // tables. Adds no columns to existing tables and computes aging
+          // from `customer_ledger` rather than storing it, so this upgrade
+          // cannot change what any customer is shown to owe. MigrationV1
+          // calls the same method.
+          await MigrationV33.up(db);
         }
       },
     );

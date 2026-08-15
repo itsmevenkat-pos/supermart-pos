@@ -9,7 +9,12 @@ import '../../../models/sale_model.dart';
 import '../../../providers/customer_provider.dart';
 import '../../../repositories/customer_ledger_repository.dart';
 import '../../../repositories/sale_repository.dart';
+import '../../../models/loyalty_point_event_model.dart';
+import '../../../models/user_model.dart';
 import '../../../services/advanced_report_service.dart';
+import '../../../services/loyalty_exceptions.dart';
+import '../../../services/loyalty_service.dart';
+import '../../../providers/auth_provider.dart';
 import '../../customers/screens/customer_form_screen.dart';
 
 final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
@@ -33,11 +38,12 @@ class _CustomerHistoryScreenState extends ConsumerState<CustomerHistoryScreen>
   late Future<List<Sale>> _salesFuture;
   late Future<List<CustomerLedger>> _ledgerFuture;
   late Future<Map<String, dynamic>?> _favoriteProductFuture;
+  late Future<CustomerLoyaltySummary> _loyaltyFuture;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _load();
   }
 
@@ -46,6 +52,7 @@ class _CustomerHistoryScreenState extends ConsumerState<CustomerHistoryScreen>
     _salesFuture = SaleRepository().getByCustomer(widget.customerId);
     _ledgerFuture = CustomerLedgerRepository().getEntries(widget.customerId);
     _favoriteProductFuture = AdvancedReportService().getCustomerFavoriteProduct(widget.customerId);
+    _loyaltyFuture = LoyaltyService().getCustomerSummary(widget.customerId);
   }
 
   @override
@@ -104,6 +111,7 @@ class _CustomerHistoryScreenState extends ConsumerState<CustomerHistoryScreen>
                 tabs: const [
                   Tab(text: 'Credit Ledger'),
                   Tab(text: 'Purchase History'),
+                  Tab(text: 'Loyalty'),
                 ],
               ),
               Expanded(
@@ -112,6 +120,7 @@ class _CustomerHistoryScreenState extends ConsumerState<CustomerHistoryScreen>
                   children: [
                     _buildLedgerTab(customer),
                     _buildPurchaseHistoryTab(),
+                    _buildLoyaltyTab(),
                   ],
                 ),
               ),
@@ -329,5 +338,270 @@ class _CustomerHistoryScreenState extends ConsumerState<CustomerHistoryScreen>
         );
       },
     );
+  }
+
+  // ------------------------------------------------------------- loyalty tab
+
+  Widget _buildLoyaltyTab() {
+    return FutureBuilder<CustomerLoyaltySummary>(
+      future: _loyaltyFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Could not load loyalty history: ${snapshot.error}'));
+        }
+        final summary = snapshot.data!;
+        final role = ref.watch(authProvider).user?.role;
+        // Same gate the rest of this app puts on money-moving actions: a
+        // cashier bills, a manager corrects. Adjusting points by hand changes
+        // a balance with no bill behind it.
+        final canAdjust = role == UserRole.manager || role == UserRole.admin;
+
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        _statTile('Points Balance', '${summary.pointsBalance}', Colors.purple),
+                        _statTile('Worth', '₹${summary.pointsValue.toStringAsFixed(2)}', Colors.green),
+                        _statTile('Tier', _tierLabel(summary.tier), _tierColor(summary.tier)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _statTile('Lifetime Earned', '${summary.lifetimeEarned}', Colors.blue),
+                        _statTile('Lifetime Redeemed', '${summary.lifetimeRedeemed}', Colors.orange),
+                        _statTile('Lifetime Expired', '${summary.lifetimeExpired}', Colors.grey),
+                      ],
+                    ),
+                    if (summary.pointsExpiringSoon > 0) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.hourglass_bottom, size: 16, color: Colors.red),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Up to ${summary.pointsExpiringSoon} point(s) lapse by '
+                              '${DateFormat('dd MMM yyyy').format(summary.nextExpiryDate!)}.',
+                              style: const TextStyle(fontSize: 12, color: Colors.red),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (canAdjust) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showAdjustPointsDialog(summary),
+                          icon: const Icon(Icons.tune),
+                          label: const Text('Adjust Points'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: Text('Point History', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            if (summary.recentEvents.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(
+                  // Points earned before the event log had a writer have no
+                  // rows behind them — say so rather than implying the
+                  // customer never earned anything.
+                  child: Text(
+                    'No point activity recorded yet.\n'
+                    'Points earned before point history was introduced are in the balance '
+                    'above but have no entries here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+              )
+            else
+              ...summary.recentEvents.map(_loyaltyEventTile),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _loyaltyEventTile(LoyaltyPointEvent event) {
+    final net = event.netPoints;
+    final color = net > 0 ? Colors.green : (net < 0 ? Colors.red : Colors.grey);
+    return ListTile(
+      dense: true,
+      leading: CircleAvatar(
+        backgroundColor: color.withValues(alpha: 0.15),
+        child: Icon(_eventIcon(event.eventType), size: 18, color: color),
+      ),
+      title: Text(_eventLabel(event)),
+      subtitle: Text(
+        '${_dateFormat.format(event.dateTime)}'
+        '${event.note != null ? '\n${event.note}' : ''}',
+      ),
+      isThreeLine: event.note != null,
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            net > 0 ? '+$net' : '$net',
+            style: TextStyle(fontWeight: FontWeight.bold, color: color),
+          ),
+          if (event.expiresAtDateTime != null)
+            Text(
+              'exp ${DateFormat('dd MMM yy').format(event.expiresAtDateTime!)}',
+              style: const TextStyle(fontSize: 10, color: Colors.grey),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _eventLabel(LoyaltyPointEvent event) {
+    switch (event.eventType) {
+      case LoyaltyEventType.sale:
+        // A single bill can both earn and spend — show both rather than
+        // netting them into one misleading number.
+        if (event.pointsEarned > 0 && event.pointsRedeemed > 0) {
+          return 'Purchase — earned ${event.pointsEarned}, redeemed ${event.pointsRedeemed}';
+        }
+        return event.pointsRedeemed > 0 ? 'Redeemed on a purchase' : 'Earned on a purchase';
+      case LoyaltyEventType.cancellation:
+        return 'Sale cancelled — points reversed';
+      case LoyaltyEventType.adjust:
+        return event.pointsEarned > 0 ? 'Manual adjustment (granted)' : 'Manual adjustment (deducted)';
+      case LoyaltyEventType.expire:
+        return 'Points expired';
+    }
+  }
+
+  IconData _eventIcon(LoyaltyEventType type) {
+    switch (type) {
+      case LoyaltyEventType.sale:
+        return Icons.shopping_bag_outlined;
+      case LoyaltyEventType.cancellation:
+        return Icons.undo;
+      case LoyaltyEventType.adjust:
+        return Icons.tune;
+      case LoyaltyEventType.expire:
+        return Icons.hourglass_disabled;
+    }
+  }
+
+  String _tierLabel(CustomerRating rating) =>
+      rating.name[0].toUpperCase() + rating.name.substring(1);
+
+  Color _tierColor(CustomerRating rating) {
+    switch (rating) {
+      case CustomerRating.gold:
+        return Colors.amber.shade800;
+      case CustomerRating.silver:
+        return Colors.blueGrey;
+      case CustomerRating.bronze:
+        return Colors.brown;
+      case CustomerRating.regular:
+        return Colors.grey;
+    }
+  }
+
+  Future<void> _showAdjustPointsDialog(CustomerLoyaltySummary summary) async {
+    final pointsController = TextEditingController();
+    final noteController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Adjust Loyalty Points'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${summary.customer.name} has ${summary.pointsBalance} point(s). '
+                'Enter a positive number to grant, negative to deduct.',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: pointsController,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(signed: true),
+                decoration: const InputDecoration(labelText: 'Points (+/-)'),
+                validator: (value) {
+                  final parsed = int.tryParse((value ?? '').trim());
+                  if (parsed == null) return 'Enter a whole number';
+                  if (parsed == 0) return 'Zero does nothing';
+                  if (parsed < 0 && -parsed > summary.pointsBalance) {
+                    return 'Only ${summary.pointsBalance} available';
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: noteController,
+                decoration: const InputDecoration(labelText: 'Reason'),
+                validator: (value) => (value ?? '').trim().isEmpty ? 'Say why these points moved' : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.pop(dialogContext, true);
+              }
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final userId = ref.read(authProvider).user?.id;
+    if (userId == null) return;
+
+    try {
+      await LoyaltyService().adjustPoints(
+        customerId: widget.customerId,
+        points: int.parse(pointsController.text.trim()),
+        note: noteController.text.trim(),
+        userId: userId,
+      );
+      if (!mounted) return;
+      setState(_load);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Points adjusted.')),
+      );
+    } on LoyaltyException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+      );
+    }
   }
 }

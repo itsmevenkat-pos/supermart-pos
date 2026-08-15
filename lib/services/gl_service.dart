@@ -473,6 +473,74 @@ class GLService {
     });
   }
 
+  static const String bankAccountCode = '1010';
+  static const String gatewayPaymentReferenceType = 'GatewayPayment';
+
+  /// The ledger side of a payment collected through a payment gateway.
+  ///
+  /// **This posts no revenue.** The sale's own entries (see [postSaleEntries])
+  /// already credited Sales Revenue for the whole bill when the sale
+  /// completed; a gateway payment is not a second sale, it is the shop
+  /// learning *how* that amount was settled. Posting revenue again here would
+  /// double the day's takings — which is why this only ever moves the same
+  /// money between two asset accounts.
+  ///
+  /// What moves depends on what the sale recorded at the till:
+  /// - [settlesReceivable] false — the sale counted this amount as cash in
+  ///   hand (account `1000`), because that is what `postSaleEntries` debits
+  ///   for anything not left owing. The money is really in the bank, so debit
+  ///   Bank `1010` and credit Cash `1000`. Net effect on total assets: nil,
+  ///   which is correct — nothing new was earned, the cash was only ever in
+  ///   the wrong account.
+  /// - [settlesReceivable] true — the sale left the amount owing (account
+  ///   `1100`) and the customer has now paid it. Debit Bank `1010`, credit
+  ///   Accounts Receivable `1100`.
+  ///
+  /// Returns an empty list for a zero-value payment, matching
+  /// [postSaleEntries] — there is nothing to record and it is not an error.
+  Future<List<GLEntry>> postGatewayPaymentEntries({
+    required String paymentId,
+    required DateTime paymentDate,
+    required double amount,
+    bool settlesReceivable = false,
+    String? saleId,
+    String? description,
+    String? createdBy,
+    DatabaseExecutor? executor,
+  }) async {
+    if (amount == 0) return const [];
+    if (amount < 0) {
+      throw UnbalancedEntry(
+        'A gateway payment cannot be negative (got ${amount.toStringAsFixed(2)}). '
+        'Use reverseByReference to undo a payment.',
+      );
+    }
+
+    return _run(executor, (db) async {
+      final bank = await requireAccountByCode(bankAccountCode, executor: db);
+      final settled = await requireAccountByCode(
+        settlesReceivable ? receivableAccountCode : cashAccountCode,
+        executor: db,
+      );
+
+      return postCompoundEntry(
+        entryDate: paymentDate,
+        description: description ??
+            (saleId == null
+                ? 'Gateway payment $paymentId'
+                : 'Gateway payment $paymentId for sale $saleId'),
+        referenceType: gatewayPaymentReferenceType,
+        referenceId: paymentId,
+        accounts: {
+          bank.id: amount, // debit: money is in the bank
+          settled.id: -amount, // credit: cash at till / receivable cleared
+        },
+        createdBy: createdBy,
+        executor: db,
+      );
+    });
+  }
+
   // --------------------------------------------------------- account lookup
 
   /// Resolves a chart-of-accounts code (e.g. '1000') to its account.

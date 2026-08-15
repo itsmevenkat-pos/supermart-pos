@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../models/customer_model.dart';
+import '../../../models/payment_gateway_transaction_model.dart';
+import '../../../services/payment_gateway_service.dart';
+import '../../payments/widgets/gateway_collect_dialog.dart';
 
 /// [preFilledMethod] – when the user taps a quick-pay button (Cash/UPI/Card/
 /// Credit) on the billing screen, this dialog now opens already set to that
@@ -10,7 +13,17 @@ import '../../../models/customer_model.dart';
 /// switched on (used by the new Partial quick-pay button).
 ///
 /// [onPay] now also reports how much change is owed back to the customer
-/// (relevant for Cash) as its 4th argument.
+/// (relevant for Cash) as its 4th argument, and — as its 5th — the ids of any
+/// gateway transactions collected in this dialog.
+///
+/// **Gateway payments are collected before the bill is saved.** A configured
+/// gateway appears in the method dropdown alongside Cash/UPI/Card/Credit, but
+/// its amount cannot be typed: the cashier presses "Collect", the money is
+/// taken and verified through [GatewayCollectDialog], and only a *verified*
+/// payment puts an amount into the split. That is why the ids come back —
+/// the sale does not exist yet at collection time, so `billing_screen` links
+/// them to it once `processSale` has written the row. See
+/// `docs/PAYMENT_GATEWAY_ARCHITECTURE.md`.
 class PaymentDialog extends StatefulWidget {
   final double total;
   final Customer? customer;
@@ -21,6 +34,7 @@ class PaymentDialog extends StatefulWidget {
     double? partialAmount,
     double? creditUsed,
     double changeDue,
+    List<String> gatewayTransactionIds,
   ) onPay;
 
   const PaymentDialog({
@@ -42,9 +56,21 @@ class _PaymentDialogState extends State<PaymentDialog> {
 
   final List<String> _paymentMethods = ['Cash', 'UPI', 'Card', 'Credit'];
 
+  /// Gateways this shop has configured, appended to [_paymentMethods] once
+  /// looked up. Empty for every shop that has not set one up, so the dialog
+  /// looks exactly as it did before for them.
+  final List<PaymentGatewayName> _gateways = [];
+
+  /// Transaction ids for gateway payments verified in this dialog, handed
+  /// back through `onPay` so the sale can be linked to them afterwards.
+  final List<String> _gatewayTransactionIds = [];
+
+  bool _isGateway(String method) => _gateways.any((g) => g.name == method);
+
   @override
   void initState() {
     super.initState();
+    _loadGateways();
 
     final method = widget.preFilledMethod ?? 'Cash';
     final controller = TextEditingController(
@@ -62,6 +88,46 @@ class _PaymentDialogState extends State<PaymentDialog> {
     if (widget.startWithPartial && widget.customer != null) {
       _partialPayment = true;
     }
+  }
+
+  /// Looked up rather than hardcoded, so an unconfigured or unimplemented
+  /// gateway is never offered. Failure is deliberately silent: a gateway
+  /// lookup problem must not stop a cashier taking cash.
+  Future<void> _loadGateways() async {
+    try {
+      final available = await PaymentGatewayService().availableGateways();
+      if (!mounted || available.isEmpty) return;
+      setState(() {
+        _gateways.addAll(available);
+        _paymentMethods.addAll(available.map((g) => g.name));
+      });
+    } catch (_) {
+      // Till keeps working on cash/card either way.
+    }
+  }
+
+  /// Takes a gateway payment for [row], and only records an amount against it
+  /// once the payment has actually been verified.
+  Future<void> _collectGatewayPayment(Map<String, dynamic> row) async {
+    final gateway = _gateways.firstWhere((g) => g.name == row['method']);
+    // Defaults to whatever is still owed on the bill — the common case is the
+    // customer paying the remainder online.
+    final outstanding = _remainingAmount + (row['amount'] as double);
+    if (outstanding <= 0) return;
+
+    final result = await showDialog<GatewayCollectResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => GatewayCollectDialog(amount: outstanding, gateway: gateway),
+    );
+    if (result == null || !mounted) return;
+
+    setState(() {
+      row['amount'] = result.amount;
+      (row['controller'] as TextEditingController).text = result.amount.toStringAsFixed(2);
+      row['gatewayTransactionId'] = result.transactionId;
+      _gatewayTransactionIds.add(result.transactionId);
+    });
   }
 
   @override
@@ -286,7 +352,13 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   final totalPaid = payments.values.fold(0.0, (sum, v) => sum + v);
                   final partialAmount = _partialPayment ? widget.total - totalPaid : null;
                   final creditUsed = payments.containsKey('credit') ? payments['credit'] : null;
-                  widget.onPay(payments, partialAmount, creditUsed, _totalChangeDue);
+                  widget.onPay(
+                    payments,
+                    partialAmount,
+                    creditUsed,
+                    _totalChangeDue,
+                    List.unmodifiable(_gatewayTransactionIds),
+                  );
                 }
               : null,
           child: const Text('Check Out'),
@@ -297,6 +369,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
 
   Widget _buildPaymentRow(Map<String, dynamic> p) {
     final isCash = p['method'] == 'Cash';
+    final isGateway = _isGateway(p['method'] as String);
     final index = _payments.indexOf(p);
 
     return Padding(
@@ -328,12 +401,45 @@ class _PaymentDialogState extends State<PaymentDialog> {
                         p['amount'] = 0.0;
                         (p['controller'] as TextEditingController).text = '';
                         (p['receivedController'] as TextEditingController).text = '';
+                        // Switching away from a collected gateway payment
+                        // drops the claim to it — the payment itself is
+                        // already recorded and refundable from the Payment
+                        // Gateways screen, it simply no longer settles this
+                        // bill.
+                        final claimed = p.remove('gatewayTransactionId') as String?;
+                        if (claimed != null) _gatewayTransactionIds.remove(claimed);
                       });
                     },
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (!isCash)
+                if (isGateway)
+                  // Not a typed amount: a gateway line is only ever worth
+                  // what the gateway confirmed was paid.
+                  Expanded(
+                    flex: 3,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            (p['amount'] as double) > 0
+                                ? '₹${(p['amount'] as double).toStringAsFixed(2)} collected'
+                                : 'Not collected yet',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: (p['amount'] as double) > 0 ? Colors.green.shade800 : Colors.grey.shade700,
+                            ),
+                          ),
+                        ),
+                        if ((p['amount'] as double) <= 0)
+                          TextButton(
+                            onPressed: () => _collectGatewayPayment(p),
+                            child: const Text('Collect'),
+                          ),
+                      ],
+                    ),
+                  ),
+                if (!isCash && !isGateway)
                   Expanded(
                     flex: 3,
                     child: TextField(

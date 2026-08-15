@@ -161,6 +161,40 @@ class StoreRepository {
     );
   }
 
+  /// How many days a loyalty point stays spendable after it is earned.
+  ///
+  /// **0 means points never expire**, which is the default and what every
+  /// installation did before this setting existed — turning expiry on has to
+  /// be a deliberate act by a manager, not something an upgrade does to a
+  /// customer's balance behind their back.
+  ///
+  /// The value is read once when points are *earned* and frozen onto that
+  /// event's `expires_at` (see `MigrationV30`), so changing it here affects
+  /// future earnings only and cannot retroactively lapse points a customer has
+  /// already been told they have.
+  Future<int> getLoyaltyExpiryDays() async {
+    final db = await _dbHelper.database;
+    final result = await db.query(
+      'stores',
+      columns: ['loyalty_points_expiry_days'],
+      where: 'id = ?',
+      whereArgs: [defaultStoreId],
+      limit: 1,
+    );
+    if (result.isEmpty) return 0;
+    return (result.first['loyalty_points_expiry_days'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<void> updateLoyaltyExpiryDays(int days) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'stores',
+      {'loyalty_points_expiry_days': days < 0 ? 0 : days},
+      where: 'id = ?',
+      whereArgs: [defaultStoreId],
+    );
+  }
+
   /// Minimum lifetime spend to reach each membership tier — see
   /// `computeTier` in `loyalty_utils.dart` for how these are applied.
   Future<Map<String, double>> getTierThresholds() async {
@@ -308,6 +342,55 @@ class StoreRepository {
         'ollama_enabled': enabled ? 1 : 0,
         'ollama_base_url': baseUrl,
         'ollama_model': model,
+      },
+      where: 'id = ?',
+      whereArgs: [defaultStoreId],
+    );
+  }
+
+  /// Razorpay credentials for this store (Phase 2, Task 2.3).
+  ///
+  /// Stored here rather than in a checked-in constants file, following the
+  /// same pattern as the Ollama and printer configuration above — the task
+  /// file rules out hardcoded keys in the repo, and this is where this app
+  /// already keeps per-installation configuration.
+  ///
+  /// Disabled with empty keys by default, so a fresh install or an upgrade
+  /// never offers a payment method the shop has not set up. See
+  /// `docs/PAYMENT_GATEWAY_ARCHITECTURE.md` for the honest limits of holding
+  /// a gateway key secret in a local SQLite file.
+  Future<({bool enabled, String keyId, String keySecret})> getRazorpayConfig() async {
+    final db = await _dbHelper.database;
+    final result = await db.query(
+      'stores',
+      columns: ['razorpay_enabled', 'razorpay_key_id', 'razorpay_key_secret'],
+      where: 'id = ?',
+      whereArgs: [defaultStoreId],
+      limit: 1,
+    );
+    if (result.isEmpty) {
+      return (enabled: false, keyId: '', keySecret: '');
+    }
+    final row = result.first;
+    return (
+      enabled: (row['razorpay_enabled'] as int? ?? 0) == 1,
+      keyId: (row['razorpay_key_id'] as String?) ?? '',
+      keySecret: (row['razorpay_key_secret'] as String?) ?? '',
+    );
+  }
+
+  Future<void> updateRazorpayConfig({
+    required bool enabled,
+    required String keyId,
+    required String keySecret,
+  }) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'stores',
+      {
+        'razorpay_enabled': enabled ? 1 : 0,
+        'razorpay_key_id': keyId.trim(),
+        'razorpay_key_secret': keySecret.trim(),
       },
       where: 'id = ?',
       whereArgs: [defaultStoreId],

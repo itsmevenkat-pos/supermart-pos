@@ -274,14 +274,28 @@ class SaleRepository {
           // First real writer `bonus_points` has ever had — the table
           // existed since the original schema but nothing wrote to it; the
           // running total on `customers.loyalty_points` was the only record.
+          //
+          // Since MigrationV30 this row is also the customer's audit trail
+          // (see `LoyaltyPointEvent`), so it carries the event type and, when
+          // the store has expiry switched on, the date these particular points
+          // lapse. The window is read from the same already-fetched store row
+          // and frozen here rather than looked up when points are spent:
+          // shortening the store's expiry later must not retroactively lapse
+          // points a customer has already been told they hold.
           if (pointsEarned != 0 || pointsRedeemed != 0) {
+            final now = DateTime.now();
+            final expiryDays = (storeRow['loyalty_points_expiry_days'] as num?)?.toInt() ?? 0;
             await txn.insert('bonus_points', {
               'id': const Uuid().v4(),
               'customer_id': customerId,
               'sale_id': sale.id,
               'points_earned': pointsEarned,
               'points_redeemed': pointsRedeemed,
-              'date': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+              'date': now.millisecondsSinceEpoch ~/ 1000,
+              'event_type': 'sale',
+              'expires_at': (expiryDays > 0 && pointsEarned > 0)
+                  ? now.add(Duration(days: expiryDays)).millisecondsSinceEpoch ~/ 1000
+                  : null,
             });
           }
 
