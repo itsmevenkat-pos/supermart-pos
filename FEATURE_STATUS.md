@@ -84,6 +84,24 @@ Status legend: ✅ Built and wired | 🔶 Partially built / wired but incomplete
 - 🔶 **Day-close/Z-report** — no dedicated Z-report screen, but `counter_close_screen.dart:130-235` already does real cash reconciliation (expected cash from opening + cash sales vs counted cash, shows over/short). Closer to done than the original ⬜ implied; needs a report/printout wrapper, not the core logic.
 - ⬜ Item/category sales report, fast/slow-mover report, stock valuation, expiry-due report, aging report, PDF/Excel export — not independently confirmed built; treat as still open.
 - ✅ `ai_analysis_screen.dart` and `product_performance_screen.dart` exist and are routed (manager-gated), reachable.
+- ✅ **Trial Balance / P&L / Balance Sheet** — real double-entry statements computed from `gl_entries`, under Reports → More → "Accounts (General Ledger)". See §15. Distinct from the existing P&L *tab*, which is computed from sales/cost-price rather than from the ledger; both exist deliberately, see the COGS note in §15.
+
+## 15. Accounting / General Ledger (Phase 1, landed 2026-08-14)
+
+Full detail in [docs/GL_ARCHITECTURE.md](docs/GL_ARCHITECTURE.md); reconciler-facing notes in [docs/GL_USER_GUIDE.md](docs/GL_USER_GUIDE.md).
+
+- ✅ **Double-entry schema** — `chart_of_accounts`, `gl_entries` (append-only), `gl_balances` (cached per account *per financial year*, since years get closed). `migration_v28.dart`, `AppConstants.dbVersion` 28. Seeded 20-account chart, all `is_system`.
+- ✅ **Balanced posting enforced** — `gl_service.dart` sums both sides and throws `UnbalancedEntry` before the first insert, so an unbalanced entry never lands even partially. `GLEntry`'s constructor separately rejects two-sided/zero/negative lines.
+- ✅ **Auto-posting from real transactions** — sale (`sale_repository.dart` `_insertSaleBody`), purchase (`purchase_repository.dart` `insertWithItems`), sales return (`sales_return_repository.dart` `_insertReturnBody`). All **inside the caller's existing transaction**: a sale whose GL post fails rolls back as a sale rather than committing unrecorded.
+- ✅ **Respects the financial-year lock** — posting into a year closed via `financial_year_close_service.dart` throws `ClosedPeriod`; a real sale into a closed year is refused outright, leaving no sale row, no ledger line and no stock deduction.
+- ✅ **Corrections are reversals** — `reverseEntry`/`reverseByReference` post the mirror line and link back via `reversal_of_entry_id`; the original is never mutated or deleted.
+- ✅ **Trial Balance / P&L / Balance Sheet** — `financial_statement_service.dart`, strictly read-only, all three sharing one query. Balance Sheet balances by construction (`Assets = Liabilities + Equity + net profit`). All three report a broken ledger as `isBalanced == false` with the discrepancy rather than crashing.
+- 🔶 **Cost of Goods Sold reads 0.00 on the GL P&L** — nothing posts to account `5000`; the sale posting is cash/receivable against revenue with no inventory-to-COGS movement. A missing *posting*, not a missing calculation, and left visible on purpose rather than back-filled from `sale_items.cost_price` (which `report_service.dart` already does — two COGS figures that can drift apart would be worse). A test asserts the zero so adding the posting later fails loudly.
+- ⬜ **Sale cancellations don't post to the GL** — `sale_cancellation_repository.dart` is untouched, so a cancelled sale leaves its entries standing and revenue reads high for a period with cancellations. Returns *are* handled. `reverseByReference` is the right tool, just not called yet.
+- ⬜ **GST not split out** — the whole bill including tax credits Sales Revenue; no output-tax liability account in the chart.
+- ⬜ `chart_of_accounts.opening_balance` is stored but never read.
+- ⚠️ **Not verified in a running app.** The three screens compile clean and are registered in `reports_screen.dart` the same way every other report is, and the service beneath them is covered by 91 tests — but no build of this app was possible in the CI container (no GTK for Linux; web blocked by pre-existing `dart:ffi` in `windows_printer.dart`). A widget smoke test was also blocked, see the note below.
+- ⚠️ **Widget tests of any `AppScaffold` screen currently fail**, GL or otherwise: `_Sidebar` builds `ListTile`s inside `Container(color: _sidebarBg)` (`app_scaffold.dart:112`, `:154`), which trips Flutter's "ListTile background color or ink splashes may be invisible" assertion on every debug render. Pre-existing and app-wide; fixing it means wrapping those tiles in their own `Material`.
 
 ## 11. User Management & Security
 

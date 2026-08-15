@@ -11,6 +11,7 @@ import 'stock_ledger_repository.dart';
 import 'supplier_ledger_repository.dart';
 import 'product_batch_repository.dart';
 import 'stock_group_repository.dart';
+import '../services/gl_service.dart';
 
 class PurchaseRepository {
   PurchaseRepository({
@@ -19,17 +20,20 @@ class PurchaseRepository {
     SupplierLedgerRepository? supplierLedgerRepo,
     ProductBatchRepository? batchRepo,
     StockGroupRepository? stockGroupRepo,
+    GLService? glService,
   })  : _dbHelper = dbHelper ?? DatabaseHelper.instance,
         _ledgerRepo = ledgerRepo ?? StockLedgerRepository(),
         _supplierLedgerRepo = supplierLedgerRepo ?? SupplierLedgerRepository(),
         _batchRepo = batchRepo ?? ProductBatchRepository(),
-        _stockGroupRepo = stockGroupRepo ?? StockGroupRepository();
+        _stockGroupRepo = stockGroupRepo ?? StockGroupRepository(),
+        _glService = glService ?? GLService();
 
   final DatabaseHelper _dbHelper;
   final StockLedgerRepository _ledgerRepo;
   final SupplierLedgerRepository _supplierLedgerRepo;
   final ProductBatchRepository _batchRepo;
   final StockGroupRepository _stockGroupRepo;
+  final GLService _glService;
 
   /// The actual stock-unit quantity a purchase line contributes.
   ///
@@ -173,6 +177,18 @@ class PurchaseRepository {
       );
       // Fixed: pass `txn` — see note above.
       await _supplierLedgerRepo.insert(supplierLedger, executor: txn);
+
+      // General Ledger: stock came in on the supplier's account, so debit
+      // Inventory and credit Accounts Payable. Posted with `txn` so the
+      // ledger commits or rolls back with the purchase — same reasoning as
+      // the supplier ledger write just above.
+      await _glService.postPurchaseEntries(
+        purchaseId: purchase.id,
+        purchaseDate: DateTime.fromMillisecondsSinceEpoch(purchase.purchaseDate * 1000),
+        netAmount: purchase.netAmount,
+        description: 'Purchase ${purchase.grnNo}',
+        executor: txn,
+      );
 
       // Fixed: pass `txn` — see note above.
       await _dbHelper.queueSync('purchases', purchase.id, 'INSERT', purchase.toJson(), executor: txn);
