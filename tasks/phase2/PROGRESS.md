@@ -14,8 +14,10 @@ Update this at the end of every run.
 | 2.3 | [03-payment-gateways.md](03-payment-gateways.md) — payment gateways | ✅ Done |
 | 2.4 | [04-collections-commission.md](04-collections-commission.md) — collections/commission | ✅ Done |
 
-**All four modules are complete.** See "Next run" at the bottom for what is
-left (PR state, and the open questions no single task could decide).
+**All four modules are complete and merged into `main`** (PR #2, merged
+2026-08-15). See "Post-merge state" and "Next run" at the bottom for what is
+left — the open questions no single task could decide, and the corrected
+migration numbering.
 
 These four are largely independent — do the next one fresh, there is no
 dependency chain to respect. **One module per run, fully**, not four started.
@@ -74,11 +76,28 @@ diff <(norm /tmp/analyze_baseline.txt) <(norm /tmp/analyze_after.txt)
 
 ### Migration version — read fresh, every run
 
-Task 2.1 took **v30**, Task 2.2 took **v31**, Task 2.3 took **v32**, Task 2.4
-took **v33** (checked fresh at the start of that run: `dbVersion` and the
-highest `if (oldVersion < N)` block both read 31). Both now read **32**. The
-next migration takes **33 — unless** another automation has landed one on
-`main` in the meantime, so re-check both places before writing a line of DDL.
+**Re-read post-merge — the numbers below changed when PR #2 landed.** Phase 2's
+migrations were renumbered up by one during the merge (see "Post-merge state"
+at the bottom), so the four modules are now **v30, v31, v32, v33** and not the
+v29–v32 the sections further down were originally written against.
+
+As of the merge, read fresh from the source:
+
+- `AppConstants.dbVersion` — **33**
+- highest `if (oldVersion < N)` block — **33**
+- highest `migration_vN.dart` on disk — **v33**
+
+**The next migration therefore takes 34, not 33.** Post-merge these three are
+finally aligned (`MigrationVn` is guarded by `oldVersion < n`, and `dbVersion`
+equals the highest `n`), so a new migration means: add `migration_v34.dart`, an
+`if (oldVersion < 34)` block, a `MigrationV34.up()` call in `MigrationV1`, and
+`dbVersion = 34`.
+
+This is worth being careful about, because the collision it guards against has
+already happened once for real: Phase 2's branch was cut before the packing-date
+work pushed its own v29 to `main`, both claimed v29, and the whole Phase 2 chain
+had to be renumbered by hand at merge time. Re-check all three places before
+writing a line of DDL — another automation may have landed one since.
 Do not trust this paragraph over the source.
 
 ## Completed work
@@ -692,6 +711,10 @@ Listed rather than silently dropped:
 
 ## Branch / PR state
 
+> **Historical — PR #2 has since been merged.** This section records why all
+> four modules went into one PR, which was a live decision at the time. See
+> "Post-merge state" below for where things actually stand.
+
 Tasks 2.1, 2.2 and 2.3 are all on **`feature/phase2-enterprise`**, and PR
 **#2** covers all three.
 
@@ -784,16 +807,77 @@ Re-verify only if something actually moved: `main` advanced (which could force
 a migration renumber), a review comment landed, or someone pushed to the
 branch. A third identical re-verification proves nothing a `git log` doesn't.
 
+## Post-merge state (later firing of 2026-08-15, Flutter 3.47.0)
+
+**PR #2 is merged. Phase 2 is done and on `main`.** The previous entry's
+guidance said to skip re-verification unless something moved — something moved,
+and it was the case that entry singled out as the one worth re-checking for
+("`main` advanced, which could force a migration renumber"). It did exactly
+that, so this run re-verified rather than skipping.
+
+What changed on `main`:
+
+- **`948e43d`** — merge of `feature/phase2-enterprise` (PR #2), merged by
+  `itsmevenkat-pos` at 2026-08-15T18:18:52Z. 67 files, +16998/−23, 11 commits.
+- **`414bd01`** — "Add packing date to barcode labels and purchase batches",
+  pushed to `main` independently *before* the merge, and **it had already taken
+  v29** for `purchase_items.packing_date` / `product_batches.packing_date`.
+
+**The migration collision, and how it was resolved.** Phase 2's branch was cut
+before `414bd01` landed and had independently claimed v29 for bank
+reconciliation. The merge kept the packing-date v29 and renumbered the entire
+Phase 2 chain up by one, in place:
+
+| Was (on the branch) | Is (on `main`) | Module |
+|---|---|---|
+| v29 | **v30** | bank reconciliation (2.1) |
+| v30 | **v31** | loyalty event log (2.2) |
+| v31 | **v32** | payment gateways (2.3) |
+| v32 | **v33** | collections/commission (2.4) |
+
+`dbVersion` went 28 → **33**. Class names, `onUpgrade` guards, `MigrationV1`'s
+delegated calls, doc comments, `docs/` and the "Files added" lists in the
+sections above were all updated to match — **but the "Migration version"
+section at the top of this file was not**, and still told the next run that 33
+was free when `migration_v33.dart` already existed. That has been corrected;
+it is the one substantive change this run made.
+
+Verified from a clean container against merged `main` (`948e43d`), no code
+changed:
+
+- `flutter analyze` — **182 issues, 0 errors**, the baseline exactly. The only
+  hits matching a Phase 2 grep are the two pre-existing ones in
+  `test/core/utils/loyalty_utils_test.dart`, as before.
+- `flutter test` (full suite) — **567 passing**, matching the count recorded
+  after Task 2.4. The merge cost no tests and broke none.
+- Migration chain re-read at the source: files `v28, v29, v30, v31, v32, v33`
+  with no duplicates; `onUpgrade` guards contiguous at `< 28/29/30/31/32/33`;
+  `dbVersion` **33**.
+- **`MigrationV1` does not call `MigrationV29.up()`, and that is correct.**
+  Worth stating because it looks like a bug: `414bd01` put `packing_date`
+  inline in `MigrationV1`'s `CREATE TABLE` for both tables, so `onCreate`
+  already has the column and only the upgrade path needs the `ALTER`.
+  (`MigrationV29.up()` also swallows a duplicate-column error, so it is safe
+  either way.) `onCreate` and `onUpgrade` do not diverge.
+
+The `flutter pub get` churn behaved as documented (`analysis_options.yaml` +
+`pubspec.lock` only); both were `git checkout --`'d.
+
+**Branch note.** `feature/phase2-enterprise` was fully merged, so this run
+restarted it from `origin/main` rather than stacking onto merged history — a
+merged PR cannot carry new work.
+
 ## Next run
 
-**All four Phase 2 modules are implemented, tested and pushed.** There is no
-next task in `tasks/phase2/`. What is actually outstanding is a human's
-attention, not more code:
+**All four Phase 2 modules are implemented, tested and merged into `main`.**
+There is no next task in `tasks/phase2/`, and no fifth module. What is
+outstanding is a human's attention, not more code:
 
-1. **PR #2 needs review and merge.** It now carries all four modules — roughly
-   14k added lines across ~60 files, and every Phase 2 migration (v30–v33).
-   Nothing further should be stacked on this branch without a good reason;
-   at four modules the PR is already large enough to be hard to review.
+1. ~~PR #2 needs review and merge.~~ **Done** — merged 2026-08-15. Phase 2 is
+   on `main` and verified there (see "Post-merge state" above). A future run
+   that finds nothing to do here should confirm cheaply — all four modules
+   done, `main` at `948e43d` or later with no new Phase 2 work, no open Phase 2
+   PR — and end without installing the SDK.
 2. **Four decisions were flagged for a human and none has been answered.**
    They are listed per-task above; the one raised in every single module is
    whether `_accountantAllowedRoutes` should gain `/banking`,
