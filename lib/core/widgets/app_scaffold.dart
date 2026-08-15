@@ -127,6 +127,7 @@ class _Sidebar extends ConsumerWidget {
             if (isManager) _tile(context, 'Promotions', Icons.local_offer, '/promotions'),
             if (isManager) _tile(context, 'Coupons', Icons.confirmation_number, '/coupons'),
             if (isManager) _tile(context, 'Stock Groups', Icons.merge_type, '/stock-groups'),
+            if (isManager) _tile(context, 'Bank Accounts', Icons.account_balance, '/banking'),
             _tile(context, 'Customers', Icons.people, '/customers'),
             if (isManager || isAccountant) _tile(context, 'Suppliers', Icons.business, '/suppliers'),
             if (isManager) _tile(context, 'Purchases', Icons.receipt_long, '/purchases'),

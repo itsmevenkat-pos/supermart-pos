@@ -77,8 +77,14 @@ void main() {
   });
 
   group('GL schema — fresh database (onCreate)', () {
-    test('dbVersion is 28 and the created database reports it', () async {
-      expect(AppConstants.dbVersion, 28);
+    // Asserts a floor, not an exact number. The GL schema landed at v28, so
+    // anything below that means the migration was lost; anything above is a
+    // later migration doing its job and is none of this test's business. The
+    // original `== 28` made every subsequent migration fail a GL test, which
+    // says nothing about the GL schema — v29 (bank reconciliation) is what
+    // tripped it.
+    test('dbVersion is at least the GL version and the created database reports it', () async {
+      expect(AppConstants.dbVersion, greaterThanOrEqualTo(28));
       expect(await freshDb.getVersion(), AppConstants.dbVersion);
     });
 

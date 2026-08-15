@@ -14,6 +14,7 @@ import 'migrations/migration_v19.dart';
 import 'migrations/migration_v24.dart';
 import 'migrations/migration_v26.dart';
 import 'migrations/migration_v28.dart';
+import 'migrations/migration_v29.dart';
 import '../../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -538,6 +539,13 @@ class DatabaseHelper {
           // calls the same method, so onCreate and onUpgrade produce
           // identical GL schema and the same seeded accounts.
           await MigrationV28.up(db);
+        }
+
+        if (oldVersion < 29) {
+          // Bank reconciliation: bank account master, imported statements and
+          // their lines — see MigrationV29. MigrationV1 calls the same method,
+          // so onCreate and onUpgrade produce identical schema.
+          await MigrationV29.up(db);
         }
       },
     );

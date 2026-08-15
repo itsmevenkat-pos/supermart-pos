@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import '../../security/password_hasher.dart';
 import 'migration_v28.dart';
+import 'migration_v29.dart';
 
 class MigrationV1 {
   static Future<void> up(Database db) async {
@@ -716,5 +717,10 @@ class MigrationV1 {
     // identical on a fresh install and on an upgrade from v27, and a single
     // shared implementation is the only way that stays true as the GL evolves.
     await MigrationV28.up(db);
+
+    // Bank reconciliation tables — delegated for the same reason as the GL
+    // schema above: one implementation, so a fresh install and an upgrade can
+    // never disagree.
+    await MigrationV29.up(db);
   }
 }

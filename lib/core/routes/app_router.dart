@@ -12,6 +12,8 @@ import '../../features/promotions/screens/promotion_list_screen.dart';
 import '../../features/promotions/screens/promotion_form_screen.dart';
 import '../../features/coupons/screens/coupon_list_screen.dart';
 import '../../features/coupons/screens/coupon_form_screen.dart';
+import '../../features/banking/screens/bank_account_list_screen.dart';
+import '../../features/banking/screens/bank_reconciliation_screen.dart';
 import '../../features/stock_groups/screens/stock_group_list_screen.dart';
 import '../../features/stock_groups/screens/stock_group_detail_screen.dart';
 import '../../models/promotion_model.dart';
@@ -101,6 +103,13 @@ final Map<String, UserRole> _routeMinRole = {
   '/coupons/form': UserRole.manager,
   '/stock-groups': UserRole.manager,
   '/stock-groups/detail': UserRole.manager,
+  // Manager, matching every other write-capable record-keeping route. Not in
+  // _accountantAllowedRoutes below: reconciliation is arguably an accountant's
+  // job, but that set is documented as a read/export-only slice and this would
+  // be the first route in it that writes. Widening it is a policy call for a
+  // human, not something to slip in with a feature.
+  '/banking': UserRole.manager,
+  '/banking/reconcile': UserRole.manager,
   '/suppliers': UserRole.manager,
   '/suppliers/form': UserRole.manager,
   '/purchases': UserRole.manager,
@@ -251,6 +260,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       builder: (context, state) => CouponFormScreen(
         coupon: state.extra is Coupon ? state.extra as Coupon : null,
       ),
+    ),
+    GoRoute(
+      path: '/banking',
+      builder: (context, state) => const BankAccountListScreen(),
+    ),
+    GoRoute(
+      // `extra`, not a `:id` path param — same reason as /stock-groups/detail
+      // below: _routeMinRole matches the literal location, so a parameterized
+      // path would bypass the manager gate.
+      path: '/banking/reconcile',
+      builder: (context, state) => BankReconciliationScreen(bankAccountId: state.extra as String),
     ),
     GoRoute(
       path: '/stock-groups',
