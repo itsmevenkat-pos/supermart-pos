@@ -10,7 +10,7 @@ Update this at the end of every run.
 | # | Task | State |
 |---|------|-------|
 | 2.1 | [01-bank-reconciliation.md](01-bank-reconciliation.md) — bank reconciliation | ✅ Done |
-| 2.2 | [02-loyalty-points.md](02-loyalty-points.md) — loyalty gap-closing | ⬜ Not started |
+| 2.2 | [02-loyalty-points.md](02-loyalty-points.md) — loyalty gap-closing | ✅ Done |
 | 2.3 | [03-payment-gateways.md](03-payment-gateways.md) — payment gateways | ⬜ Not started |
 | 2.4 | [04-collections-commission.md](04-collections-commission.md) — collections/commission | ⬜ Not started |
 
@@ -48,6 +48,10 @@ Phase 1's numbers still hold for analyze; the test count has grown.
 - `flutter analyze`: **182 issues, 0 errors** — identical to Phase 1's baseline.
 - `flutter test`: **264 passing** at the start of this run.
 - After Task 2.1: **182 issues (0 new)**, **308 passing** (+44 new).
+- Start of the Task 2.2 run, re-measured: **182 issues, 0 errors**, **308 passing** —
+  unchanged, nothing landed on `main` in between.
+- After Task 2.2: **182 issues (0 new,** identical to baseline by file+rule**)**,
+  **365 passing** (+57 new).
 
 Compare analyze by file + rule, not raw line, since inserting lines shifts
 every issue below them:
@@ -59,11 +63,11 @@ diff <(norm /tmp/analyze_baseline.txt) <(norm /tmp/analyze_after.txt)
 
 ### Migration version — read fresh, every run
 
-At the start of this run `AppConstants.dbVersion` was **28** and the highest
-`if (oldVersion < N)` block was 28, so Task 2.1 took **v29**. Both are now
-**29**. The next migration takes **30 — unless** another automation has landed
-one on `main` in the meantime, so re-check both places before writing a line
-of DDL. Do not trust this paragraph over the source.
+Task 2.1 took **v29**. At the start of the Task 2.2 run `AppConstants.dbVersion`
+read **29** and the highest `if (oldVersion < N)` block was 29, so Task 2.2 took
+**v30**. Both are now **30**. The next migration takes **31 — unless** another
+automation has landed one on `main` in the meantime, so re-check both places
+before writing a line of DDL. Do not trust this paragraph over the source.
 
 ## Completed work
 
@@ -190,12 +194,191 @@ Listed rather than silently dropped:
   widget tests, so the module follows the local convention: service and
   repository logic is covered (44 tests), UI is not.
 
+### Task 2.2 — Loyalty points gap-closing (done)
+
+The README was right that this is not a from-scratch build, and it understated
+the case: a *fourth* piece already existed that neither the README nor the task
+file mentions. See "deviation 1" below.
+
+New architecture doc: **[docs/LOYALTY_ARCHITECTURE.md](../../docs/LOYALTY_ARCHITECTURE.md)**
+— written for the same reason Phase 1 has `GL_ARCHITECTURE.md`: the task file
+for this module was stale, and the next run needs a description of what is
+really there. Trust that doc over any task file.
+
+Files added:
+- `lib/core/database/migrations/migration_v30.dart` — five columns on
+  `bonus_points`, one on `stores`, three indexes.
+- `lib/models/loyalty_point_event_model.dart` — `LoyaltyPointEvent` +
+  `LoyaltyEventType`.
+- `lib/repositories/loyalty_event_repository.dart`
+- `lib/services/loyalty_service.dart`, `loyalty_exceptions.dart`
+- `lib/features/loyalty/screens/loyalty_summary_screen.dart`
+- `docs/LOYALTY_ARCHITECTURE.md`
+- `test/repositories/loyalty_event_repository_test.dart` (19 tests),
+  `test/services/loyalty_service_test.dart` (38 tests)
+
+Files changed:
+- `lib/core/database/database_helper.dart` — `if (oldVersion < 30)` + import.
+- `lib/core/database/migrations/migration_v1.dart` — calls `MigrationV30.up()`
+  + import.
+- `lib/constants/app_constants.dart` — `dbVersion` 29 → 30.
+- `lib/repositories/store_repository.dart` — `get/updateLoyaltyExpiryDays`.
+- `lib/repositories/sale_repository.dart` — the existing `bonus_points` insert
+  now stamps `event_type` and `expires_at`.
+- `lib/repositories/sale_cancellation_repository.dart` — points reversal fixed,
+  see deviation 4.
+- `lib/features/reports/screens/customer_history_screen.dart` — third tab.
+- `lib/core/routes/app_router.dart`, `lib/core/widgets/app_scaffold.dart` —
+  `/loyalty` route + sidebar tile.
+
+Decisions and deviations, with reasons:
+
+1. **The event log extends the existing `bonus_points` table; the task file's
+   `loyalty_point_events` table was NOT created.** This is the big one. The
+   README's stale-audit warning did not go far enough — beyond
+   `loyalty_utils.dart` and the `Customer`/`Sale` fields it lists,
+   `bonus_points` has existed since the original schema *and*
+   `SaleRepository` already writes one row per points-moving sale (there is a
+   comment in that file calling itself "the first real writer `bonus_points`
+   has ever had"). Building `loyalty_point_events` next to it would have
+   produced exactly the two-disagreeing-sources-of-truth problem the same task
+   file warns against two paragraphs earlier. `MigrationV30` adds
+   `event_type` / `expires_at` / `expired_points` / `note` /
+   `created_by_user_id` instead. Existing rows default to `event_type='sale'`,
+   which is correct for every one of them, so there was no data migration.
+
+2. **Migration version 30**, per the dynamic rule; `dbVersion` and the highest
+   `onUpgrade` block both read 29 at the start of this run.
+
+3. **`stores.loyalty_points_expiry_days` defaults to 0 = never expire, and
+   `expires_at` is frozen at earn time.** Two separate deliberate choices.
+   Defaulting to off means upgrading to v30 cannot silently lapse any existing
+   customer's points — a balance quietly dropping after an upgrade nobody asked
+   for is a customer-facing regression, not a feature. Freezing the window onto
+   each earn event (rather than deriving it from the store setting at read
+   time) means shortening the setting later cannot retroactively expire points
+   a customer has already been told they hold.
+
+4. **Fixed a real bug in `SaleCancellationRepository` rather than working
+   around it.** The reversal recomputed points as
+   `netAmount / bonus_points_threshold`, which drops `pointMultiplierForRating`
+   — so cancelling a gold customer's bill clawed back about half the points
+   they were actually given, and points *redeemed* on the cancelled bill were
+   destroyed rather than returned. It now reads the sale's `bonus_points` row
+   and reverses what was really recorded, clamps so a reversal cannot drive a
+   balance negative, and logs a `cancellation` event. Sales predating the event
+   log keep the old estimate, since nothing recorded what they did. This is
+   outside the letter of Task 2.2 but squarely inside its purpose: the whole
+   point of an audit log is that reversals stop being guesses.
+
+5. **Expiry is FIFO with per-lot write-back, making sweeps idempotent.**
+   Redemptions consume the oldest lot first; a lapsed lot only writes off what
+   spending never reached. What a sweep takes is added to that lot's
+   `expired_points`, and `expire` rows are excluded from the spending total, so
+   a second sweep sees smaller lots and the same spending and takes nothing.
+   Tested explicitly (three consecutive sweeps, including one a year later).
+
+6. **`expireOldPoints()` is on-demand only — no scheduler.** Checked before
+   relying on one, as the task file asks: this app has no background job
+   runner (the only `Timer.periodic` calls are UI refresh in
+   `billing_screen.dart`, and there is no workmanager/cron dependency). A
+   manager runs the sweep from the loyalty screen. Turning the expiry setting
+   on does not by itself expire anything, and the screen says so.
+
+7. **A `LoyaltyEventRepository` and `LoyaltyService` were created despite the
+   task file saying "do not create a `LoyaltyRepository`".** That prohibition
+   is aimed at a parallel *account/rules* store competing with
+   `Customer.loyaltyPoints` — and no such thing was built. What was built is
+   data access for the existing event table and the expiry/adjust/report logic
+   over it, which has to live somewhere, and this codebase's convention is
+   repository + service. Neither class owns the balance: `LoyaltyService`
+   updates `customers.loyalty_points` in the same transaction as the event, and
+   `LoyaltyEventRepository` never touches it.
+
+8. **`recomputeBalanceFromEvents()` deliberately does not repair a mismatch.**
+   Customers who earned points before `SaleRepository` started writing
+   `bonus_points` legitimately hold a balance with no events behind it, so an
+   automatic rebuild would destroy real points. It reports, a human decides.
+   The per-customer UI says the same thing in words rather than showing an
+   empty history that implies the customer never earned anything.
+
+9. **`adjustPoints` requires an acting user and writes its audit row inside the
+   transaction.** The audit write was initially outside it, which the tests
+   caught: a failed audit left the points already moved. Moved inside, matching
+   `SaleCancellationRepository`'s convention — the balance change and the
+   record of who made it now commit together or not at all.
+
+10. **UI lives in `lib/features/loyalty/`, not `features/reports/`** — same
+    reasoning as Task 2.1 deviation 7: `reports/` is read-only output, and this
+    screen runs an expiry sweep and edits a store setting.
+
+11. **`/loyalty` is manager-gated and NOT in `_accountantAllowedRoutes`** —
+    same open policy question flagged in Task 2.1 deviation 8, and the same
+    answer: that set is documented as read-only, and the outstanding-points
+    liability is arguably an accountant's business. **If accountants should see
+    the loyalty liability, add `/loyalty` to that set** — a human's call.
+
+12. **Tier count and names untouched**, as the task file instructs: still
+    `regular`/`bronze`/`silver`/`gold`.
+
+### Known gaps left open by Task 2.2
+
+Listed rather than silently dropped:
+
+- **The points liability is not posted to the GL.** Outstanding points ×
+  redemption value is a real liability the Phase 1 Balance Sheet does not show.
+  The loyalty screen surfaces the number and states plainly that it is not in
+  the ledger. Booking it needs a chart-of-accounts addition plus a posting rule
+  on every earn and redeem — an accounting decision for a human, and the task
+  file explicitly calls it out of scope.
+- **"Expiring soon" is an upper bound**, not exact. It sums lots due within 30
+  days without running the FIFO walk, then caps at the customer's balance, so
+  it can overstate for someone who has spent recently. Exact would mean a full
+  walk per customer per screen paint.
+- **No widget tests** for the new tab or screen — same local convention as
+  Task 2.1; this codebase has essentially none.
+- **The stale placeholder test was left alone.**
+  `test/core/services/loyalty_service_test.dart` asserts arithmetic on literals
+  against a hardcoded ₹100-per-point that does not match this app's
+  configurable rate, and imports nothing (its import is commented out behind a
+  `TODO`). Task 2.2's brief was that existing loyalty tests pass unmodified, so
+  it was not touched — but it tests nothing and its filename now collides
+  conceptually with the real `test/services/loyalty_service_test.dart`.
+  **Worth deleting in a follow-up**, which is a call for a human since it is
+  pre-existing.
+- **Expiry has no UI on the customer-facing side.** Nothing warns a customer at
+  the till that their points are about to lapse; the warning is only on the
+  customer history screen a manager opens.
+
+## Branch / PR state
+
+Both Task 2.1 and Task 2.2 are on **`feature/phase2-enterprise`**, and PR
+**#2** covers both.
+
+The run instructions suggested a PR per module. That was not done, and the
+reason is `tasks/phase2/PROGRESS.md` itself: it exists only on this branch, not
+on `main`. Two module branches cut from `main` would each create their own copy
+of this file and conflict on merge, losing exactly the cross-run state the
+protocol depends on. Keeping one branch — which is also what step 2 of the run
+instructions names explicitly — avoids that. PR #2's title and body were
+updated to say it carries both modules rather than leaving it labelled as
+Task 2.1 only.
+
+**If per-module PRs are wanted**, the fix is to land `tasks/phase2/PROGRESS.md`
+on `main` first; after that, module branches can be cut independently.
+
 ## Next run
 
-Start Task 2.2 ([02-loyalty-points.md](02-loyalty-points.md)). **Read
-[README.md](README.md)'s loyalty section first** — most of that module already
-exists (`loyalty_utils.dart`, `customer_model.loyaltyPoints`,
-`sale_model.loyaltyPointsRedeemed`, redemption already wired into billing,
-per-store earn rate already in `migration_v26`). The task is gap-closing, not a
-rebuild, and the tier ladder is **4 tiers** (regular/bronze/silver/gold), not
-the 3 the task file assumes.
+Start Task 2.3 ([03-payment-gateways.md](03-payment-gateways.md)). Nothing from
+Task 2.2 blocks it — the four modules are independent.
+
+Before writing any DDL, re-read `AppConstants.dbVersion` and the highest
+`if (oldVersion < N)` block. They are **30** as of this run; assume nothing.
+
+**Repeat the Task 2.2 lesson on Task 2.3 and 2.4**: this codebase has more
+already built than the task files credit. Before implementing anything a task
+file describes as new, grep for it. Task 2.2's file called for a new events
+table that was already there in all but five columns, and the README's own
+warning about the stale audit had itself missed that. Check
+`docs/GL_ARCHITECTURE.md` and `docs/LOYALTY_ARCHITECTURE.md` first — those
+describe reality.
