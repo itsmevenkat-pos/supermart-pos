@@ -457,3 +457,22 @@ that must **not** be committed — `pubspec.lock` (re-resolves downward against
 the older SDK) plus the generated plugin registrants for `linux/`, `macos/` and
 `windows/`. `git checkout --` them before committing, same as the
 `analysis_options.yaml` churn noted at the top.
+
+### Second re-verification (later run of 2026-08-15, Flutter 3.47.0)
+
+Re-ran the full check again from a clean container. No code was changed — there
+was no incomplete task to pick up.
+
+- `flutter analyze` — **182 issues, 0 errors** (161 info + 21 warning), matching
+  the baseline exactly, and **no issue in any GL file**.
+- `flutter test` (full suite) — **264 tests, all passed.**
+- `origin/main` still at `3632e08` (unmoved since the branch was cut), so
+  `dbVersion = 28` remains free and no renumbering is needed at merge time.
+- PR #1 still **open**, `mergeable_state: clean`, with **no reviews and no
+  comments** on it yet.
+
+**There is still no next task for this routine.** Phase 1 is done and the only
+remaining work is human: review and merge PR #1, and click through the three
+report screens on a real Windows build (see "UI not run"). Repeated firings will
+keep re-verifying the same green result and changing nothing — the routine can
+be turned off.
