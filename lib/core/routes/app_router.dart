@@ -14,6 +14,7 @@ import '../../features/coupons/screens/coupon_list_screen.dart';
 import '../../features/coupons/screens/coupon_form_screen.dart';
 import '../../features/banking/screens/bank_account_list_screen.dart';
 import '../../features/banking/screens/bank_reconciliation_screen.dart';
+import '../../features/loyalty/screens/loyalty_summary_screen.dart';
 import '../../features/stock_groups/screens/stock_group_list_screen.dart';
 import '../../features/stock_groups/screens/stock_group_detail_screen.dart';
 import '../../models/promotion_model.dart';
@@ -109,6 +110,7 @@ final Map<String, UserRole> _routeMinRole = {
   // be the first route in it that writes. Widening it is a policy call for a
   // human, not something to slip in with a feature.
   '/banking': UserRole.manager,
+  '/loyalty': UserRole.manager,
   '/banking/reconcile': UserRole.manager,
   '/suppliers': UserRole.manager,
   '/suppliers/form': UserRole.manager,
@@ -264,6 +266,10 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(
       path: '/banking',
       builder: (context, state) => const BankAccountListScreen(),
+    ),
+    GoRoute(
+      path: '/loyalty',
+      builder: (context, state) => const LoyaltySummaryScreen(),
     ),
     GoRoute(
       // `extra`, not a `:id` path param — same reason as /stock-groups/detail
