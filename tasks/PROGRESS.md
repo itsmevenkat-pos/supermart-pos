@@ -419,3 +419,41 @@ zero new analyze issues over the pre-existing 182-issue baseline.
    `windows_printer.dart`. The screens are verified by analyze and by the
    service tests beneath them. A widget smoke test is also currently
    impossible for *any* `AppScaffold` screen in this repo (see Task 1.4 note 6).
+
+## PR is open — nothing left for this routine to do
+
+**[PR #1 — Phase 1: General Ledger module](https://github.com/itsmevenkat-pos/supermart-pos/pull/1)**
+(`feature/phase1-gl` → `main`) is **open** and `mergeable_state: clean`. All six
+tasks are complete and the PR description already carries every decision and
+known gap listed above.
+
+A future run of this routine should **not** re-open it, and has no next task to
+pick up. The remaining work is human review, and specifically the one item the
+container cannot do (see "UI not run" above): **click through Trial Balance,
+P&L and Balance Sheet on a real Windows build before merging.** The repo has no
+CI configured, so no automated check will cover that either.
+
+If the scheduled routine is still firing, it can be turned off.
+
+### Independent re-verification (run of 2026-08-15)
+
+This run re-ran everything from scratch rather than trusting the notes above,
+and the numbers reproduce exactly:
+
+- `flutter analyze` — **182 issues, 0 errors**, identical to the recorded
+  pre-existing baseline (0 new).
+- `flutter test` (full suite, not just GL) — **264 tests, all passed**, exit 0.
+- Working tree clean, `feature/phase1-gl` in sync with origin, `dbVersion = 28`
+  still the highest `if (oldVersion < N)` block, and `origin/main` has not moved
+  since the branch was cut — so the migration version is still free and no
+  renumbering is needed at merge time.
+
+Verified on **Flutter 3.35.1 stable / Dart 3.9.0** — deliberately a *different*
+SDK from the 3.47.0 the earlier runs used, so the results above are not an
+artifact of one toolchain.
+
+Note for anyone repeating this: `flutter pub get` on 3.35.1 dirties four files
+that must **not** be committed — `pubspec.lock` (re-resolves downward against
+the older SDK) plus the generated plugin registrants for `linux/`, `macos/` and
+`windows/`. `git checkout --` them before committing, same as the
+`analysis_options.yaml` churn noted at the top.
