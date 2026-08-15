@@ -15,6 +15,7 @@ import 'migrations/migration_v24.dart';
 import 'migrations/migration_v26.dart';
 import 'migrations/migration_v28.dart';
 import 'migrations/migration_v29.dart';
+import 'migrations/migration_v30.dart';
 import '../../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -546,6 +547,15 @@ class DatabaseHelper {
           // their lines — see MigrationV29. MigrationV1 calls the same method,
           // so onCreate and onUpgrade produce identical schema.
           await MigrationV29.up(db);
+        }
+
+        if (oldVersion < 30) {
+          // Loyalty point event log + expiry. Widens the existing
+          // `bonus_points` table rather than adding a second events table —
+          // see MigrationV30 for why. `stores.loyalty_points_expiry_days`
+          // defaults to 0 (never expire), so this upgrade does not change any
+          // customer's balance. MigrationV1 calls the same method.
+          await MigrationV30.up(db);
         }
       },
     );

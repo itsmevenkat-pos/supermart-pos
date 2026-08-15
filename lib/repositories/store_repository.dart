@@ -161,6 +161,40 @@ class StoreRepository {
     );
   }
 
+  /// How many days a loyalty point stays spendable after it is earned.
+  ///
+  /// **0 means points never expire**, which is the default and what every
+  /// installation did before this setting existed — turning expiry on has to
+  /// be a deliberate act by a manager, not something an upgrade does to a
+  /// customer's balance behind their back.
+  ///
+  /// The value is read once when points are *earned* and frozen onto that
+  /// event's `expires_at` (see `MigrationV30`), so changing it here affects
+  /// future earnings only and cannot retroactively lapse points a customer has
+  /// already been told they have.
+  Future<int> getLoyaltyExpiryDays() async {
+    final db = await _dbHelper.database;
+    final result = await db.query(
+      'stores',
+      columns: ['loyalty_points_expiry_days'],
+      where: 'id = ?',
+      whereArgs: [defaultStoreId],
+      limit: 1,
+    );
+    if (result.isEmpty) return 0;
+    return (result.first['loyalty_points_expiry_days'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<void> updateLoyaltyExpiryDays(int days) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'stores',
+      {'loyalty_points_expiry_days': days < 0 ? 0 : days},
+      where: 'id = ?',
+      whereArgs: [defaultStoreId],
+    );
+  }
+
   /// Minimum lifetime spend to reach each membership tier — see
   /// `computeTier` in `loyalty_utils.dart` for how these are applied.
   Future<Map<String, double>> getTierThresholds() async {

@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import '../../security/password_hasher.dart';
 import 'migration_v28.dart';
 import 'migration_v29.dart';
+import 'migration_v30.dart';
 
 class MigrationV1 {
   static Future<void> up(Database db) async {
@@ -722,5 +723,11 @@ class MigrationV1 {
     // schema above: one implementation, so a fresh install and an upgrade can
     // never disagree.
     await MigrationV29.up(db);
+
+    // Loyalty event-log columns on `bonus_points` (created above) plus the
+    // store expiry setting. Delegated for the same reason; every statement in
+    // there is an idempotent ADD COLUMN / CREATE INDEX IF NOT EXISTS, so
+    // running it right after the CREATE is safe.
+    await MigrationV30.up(db);
   }
 }
