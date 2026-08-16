@@ -48,6 +48,13 @@ Phase 1 recorded.
 
 ### Baseline, re-measured this run
 
+> **Superseded 2026-08-16 (eighth firing). Do not compare against 182/578.**
+> `main` @ `0e9a80a` deleted 20 placebo test files and cleared all 21 analyzer
+> warnings, moving the baseline to **138 issues / 0 errors / 0 warnings** and
+> **478 passing**. The numbers below are the record of the Phase 2 build runs
+> and were correct when measured; they are no longer the thing to diff against.
+> Re-measure before trusting any of it — that is the standing rule.
+
 Phase 1's numbers still hold for analyze; the test count has grown.
 
 - `flutter analyze`: **182 issues, 0 errors** — identical to Phase 1's baseline.
@@ -83,7 +90,8 @@ one when PR #2 landed — see "Post-merge state" at the bottom), but the
 **v34**. The previous version of this section told the next run that 34 was
 free; it is not.
 
-As of `main` @ `aa26d7d`, read fresh from the source:
+As of `main` @ `0e9a80a` (re-read 2026-08-16, eighth firing — `main` moved
+again but took no new migration), read fresh from the source:
 
 - `AppConstants.dbVersion` — **34**
 - highest `if (oldVersion < N)` block — **34**
@@ -1212,3 +1220,120 @@ pointed at four Phase 2 task files that are all `✅ Done`, so it cannot pick an
 of that up on its own; the stored prompt is what would have to change. Trigger
 `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, still enabled — and per
 the previous entry, a firing must not repoint itself.
+
+## `main` moved with code again (2026-08-16, eighth firing) — branch resynced
+
+The second non-idle firing in a row. `origin/main` advanced `aa26d7d` →
+**`0e9a80a`** ("Clear the audit's housekeeping and doc-drift findings"), which
+is the named break-the-silence trigger from the cadence rule above, so this run
+did the full check rather than the cheap one.
+
+**Phase 2's four modules remain `✅ Done` and merged. No module work was
+available and none was invented.** What this run actually did was the one
+mechanical thing that was owed: the branch was behind `main` by that commit,
+and is no longer.
+
+### What landed on `main`
+
+`0e9a80a`, one commit, not from this routine (authored by the repo owner) —
+51 files, +52/−28,578. It closes the audit's H1, H2 and housekeeping findings:
+
+- **20 test files deleted.** They asserted arithmetic on local constants and
+  imported no application code; several still carried the scaffold comment
+  "TODO: Replace with your actual billing service import."
+- **`FEATURE_STATUS.md` corrected** — it had drifted so far it understated the
+  app, and claimed schema v7 when it is v34. The four Phase 2 modules were
+  added to it; they had never been listed.
+- **Housekeeping** — `scr/` (22 PowerShell generators, ~1MB), the `lib.zip`/
+  `test.zip` snapshots, the unused `excel` dependency, three dead constants.
+- **All 21 analyzer warnings cleared.**
+
+### The merge
+
+`git merge origin/main` into `feature/phase2-enterprise`, **clean, no
+conflicts** — `0e9a80a` touched no file under `tasks/`, so the journal could
+not collide. After the merge the branch is `main` **plus this file and nothing
+else**: `git diff origin/main HEAD -- lib/ test/` is empty.
+
+### The new baseline — this is the number that moved
+
+**138 issues / 0 errors / 0 warnings** and **478 passing** (was 182/0/21 and
+578). Both the "Baseline" section at the top and this note now say so; a run
+that diffs against 182/578 will read a 100-test drop as a catastrophic
+regression when it is a deliberate deletion of tests that never tested
+anything.
+
+### Why no Flutter install this run
+
+After the merge the branch's `lib/` and `test/` are **byte-identical to
+`main`**, and `main`'s own commit reports `analyze` and `test` results for
+exactly that tree. Installing the SDK to re-measure an identical tree would
+produce `main`'s numbers back and prove nothing — the same reasoning the third
+through sixth firings used. The commit made here is a single markdown file.
+
+What *was* verified, cheaply and from source, because Phase 2 code sits
+downstream of it:
+
+- **The 20 deleted tests really did import no application code.** Checked the
+  three whose names sit closest to Phase 2 surfaces — `loyalty_service_test`,
+  `payment_service_test`, `billing_service_test` — at `0e9a80a^`. Every one has
+  exactly one import, `package:flutter_test/flutter_test.dart`. No Phase 2
+  coverage was lost, because there was none to lose.
+- **The `lib/` changes are dead-code removal only.** Unused imports
+  (`go_router`, `store_repository`, `product_form_screen`, `customer_repository`,
+  a duplicate `KeyEvent`), two unused locals (`user`, and `subtotal`/`totalTax`
+  superseded by the cart notifier), and one unused private widget
+  (`_actionButton`). The one that could have bitten — `_ReturnLine.restocked`
+  moving from constructor default to field initializer — is safe: dropping a
+  named parameter is a **compile error** at any call site that passed it, and
+  `main` reports 0 errors, so no caller did. Default stays `true`.
+- **No new migration.** `dbVersion` is still **34**, guards still contiguous
+  through `oldVersion < 34`, highest file still `migration_v34.dart`. **Next
+  free is still 35.** `0e9a80a`'s `app_constants.dart` edit only deleted three
+  dead constants.
+
+### Branch / PR state
+
+**PR #4** (journal-only, base `main`) is still open and unreviewed. This run's
+merge and this entry push to it, so it is now up to date with `main` rather
+than trailing it by a commit.
+
+### Deliberately did not notify
+
+The cadence rule above names "`origin/main` moving with code in the diff" as a
+trigger that breaks the 24h silence, and it technically fired. This run judged
+that it should not, and the rule should be read as narrower than its letter:
+
+- The commit is **the owner's own work from today**. Notifying would report
+  their own change back to them.
+- The intent behind that trigger was "something landed that Phase 2 may need to
+  react to." Phase 2 needed no reaction — `lib/` identical, no migration
+  collision, nothing broken, nothing regressed.
+- An idle notification already went out today (sixth firing), and the seventh
+  fired two hours later. A third would be the exact pattern the cadence rule
+  was written to stop.
+
+**Refined trigger for future firings:** break silence when `main` moves in a
+way that *requires something of Phase 2* — a migration-number collision, a
+conflict on merge, a broken build or test, or a change touching Phase 2's own
+modules — not merely when the diff contains code. Plus the unchanged triggers:
+a review landing on the open PR, or a new task file in `tasks/phase2/`.
+Last idle notification: **2026-08-16, sixth firing**.
+
+### Still open, still human — unchanged
+
+1. **PR #4** needs a human to merge or close it.
+2. The three decisions in "Next run" (items 2–3): `_accountantAllowedRoutes`,
+   and the three off-ledger liabilities (loyalty points, gateway settlement
+   fees, commission) which the audit's §7 also groups as one task.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day,
+   still enabled. A firing must not repoint itself.
+
+One note on the repoint recommendation, which has now partly expired: the
+seventh firing proposed `docs/AUDIT_2026-08-16.md` §7's Week 2 block as a
+concrete destination. `0e9a80a` has since done the placebo-test deletion half
+of it. What remains there is still real, decision-free work — write actual
+`sqflite_common_ffi` tests for `sale_repository`, and add the schema
+round-trip and route-coverage tests — and the 478-test suite now has a
+genuine hole where the deleted files used to provide false comfort.
