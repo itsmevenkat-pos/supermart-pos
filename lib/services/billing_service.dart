@@ -3,7 +3,6 @@ import '../models/sale_item_model.dart';
 import '../models/product_model.dart';
 import '../repositories/sale_repository.dart';
 import '../repositories/product_repository.dart';
-import '../repositories/customer_repository.dart';
 import '../repositories/store_repository.dart';
 import 'gst_service.dart';
 
@@ -32,7 +31,6 @@ class CartItem {
 class BillingService {
   final SaleRepository _saleRepo = SaleRepository();
   final ProductRepository _productRepo = ProductRepository();
-  final CustomerRepository _customerRepo = CustomerRepository();
   final GstService _gstService = GstService();
 
   Future<Sale> processSale({

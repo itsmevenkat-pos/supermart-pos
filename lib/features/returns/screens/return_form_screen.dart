@@ -42,7 +42,9 @@ class _ReturnLine {
   final double unitPrice;
   final double taxRate;
   final double costPrice;
-  bool restocked;
+  /// Set by the per-line toggle rather than at construction — a returned
+  /// item goes back into stock unless someone marks it damaged.
+  bool restocked = true;
   bool included;
 
   _ReturnLine({
@@ -54,7 +56,6 @@ class _ReturnLine {
     required this.unitPrice,
     required this.taxRate,
     required this.costPrice,
-    this.restocked = true,
     this.included = true,
   });
 
