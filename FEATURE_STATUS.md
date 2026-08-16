@@ -2,7 +2,11 @@
 
 Owner: Venkat | Store: Kootaripattu, Tamil Nadu | Stack: Flutter (Windows desktop) + SQLite (local) + Supabase (planned, not implemented)
 
-This corrects the original master spec's ✅/🔶/⬜ markers against what's actually in the codebase as of 2026-08-12 — several items were mismarked in both directions. File:line citations point to where each verdict comes from. Update these markers as work lands so this stays the live reference.
+This corrects the original master spec's ✅/🔶/⬜ markers against what's actually in the codebase as of **2026-08-16** — several items were mismarked in both directions. File:line citations point to where each verdict comes from. Update these markers as work lands so this stays the live reference.
+
+> **Re-verified 2026-08-16.** The 2026-08-12 edition of this file had drifted badly and every error ran the same direction — it *understated* the app, claiming as unbuilt several things that exist (returns/exchange, promotions, coupons, loyalty redemption, stock groups, Supabase). A contributor following it would have rebuilt working code. The stale sections are corrected below.
+>
+> **Before implementing anything this file calls unbuilt, grep for it first.** That rule was already written into `tasks/phase2/PROGRESS.md`; it applies to this document too.
 
 Status legend: ✅ Built and wired | 🔶 Partially built / wired but incomplete | ⬜ Not started | ⚠️ Confirmed bug
 
@@ -29,7 +33,8 @@ Status legend: ✅ Built and wired | 🔶 Partially built / wired but incomplete
 - ⬜ Stock adjustment module (damage/expiry/theft/count correction with reason codes) — zero matches in `lib/`, not built.
 - 🔶 Batch & expiry — captured as free-text columns on `purchase_items`/`stock_ledger` (`migration_v1.dart:252-253,268-269`) but never surfaced back to products for FEFO/expiry alerts. Data capture only, not a tracking system.
 - 🔶 Multi-MRP — see §1, implemented via per-MRP product rows rather than true batch tracking against one SKU.
-- ⬜ Unit conversion, stock transfer between counters, physical stock take/cycle count, category/sub-category/brand hierarchy, shared/pooled stock groups (no `group_id` anywhere in schema or models) — not built.
+- ✅ **Shared/pooled stock groups** — corrected 2026-08-16, the earlier "no `group_id` anywhere" claim was wrong. `stock_group_repository.dart` + `lib/features/stock_groups/`, and `group_id` appears throughout the schema and models.
+- ⬜ Unit conversion, stock transfer between counters, physical stock take/cycle count, category/sub-category/brand hierarchy — not built.
 - ✅ Product master core fields (barcode, tax rate, MRP, cost price, reorder level, unit) exist; HSN code, image, computed margin not confirmed present.
 
 ## 3. Purchase & Supplier Management
@@ -45,7 +50,7 @@ Status legend: ✅ Built and wired | 🔶 Partially built / wired but incomplete
 
 - ⬜ Customer master GSTIN field — not present on `customer_model.dart`.
 - ✅ **Khata/credit ledger** — fixed 2026-08-13. `customer_ledger` table (mirrors `supplier_ledger`) + `CustomerLedgerRepository`, written on every credit sale and payment. Real detail screen at `/customers/history?id=<id>` shows transaction-wise history and purchase history. `receive_payment_screen.dart` (previously also a placeholder) now actually records payments against the balance.
-- 🔶 **Loyalty points** — earning is real (`sale_repository.dart:90`, points accrue via `bonus_points` threshold), but **no redemption logic anywhere** despite a `points_redeemed` column existing in schema. Unchanged by the 2026-08-13 pass — still open.
+- ✅ **Loyalty points** — corrected 2026-08-16; the "no redemption logic anywhere" claim was wrong. Earning accrues via a per-store threshold with tier multipliers, and `billing_screen.dart` has a points-to-redeem dialog capped at both the customer's balance and the bill value. Phase 2 added an event log, FIFO expiry (off by default) and manual adjustments — see `docs/LOYALTY_ARCHITECTURE.md`.
 - ✅ Dead-code duplicate `customer_history_screen.dart` deleted; the real detail screen replaces the "Coming Soon" placeholder that used to live at the routed path.
 - ✅ Tapping a customer in `customer_list_screen.dart` now opens the detail/ledger screen; editing moved to an explicit pencil icon.
 - 🔶 **WhatsApp bill delivery** — real but manual: `whatsapp_share_service.dart` opens `wa.me/?text=...` with a text summary (or OS share sheet fallback); no PDF attachment, no auto-send.
@@ -53,12 +58,15 @@ Status legend: ✅ Built and wired | 🔶 Partially built / wired but incomplete
 
 ## 5. Pricing, Discounts & Promotions
 
-- ⬜ **Promotions engine is dead code, not partial.** `promotion_model.dart` looks fully-featured (percentage/fixed/free-item, min qty, category/product scope, date range) and a `promotions` table exists (`migration_v1.dart:291-306`) — but there is no `PromotionRepository`, no provider, no UI, and `billing_service.dart` never reads the table. Zero runtime effect.
-- ⬜ Coupon codes, Buy-X-Get-Y, slab discounts, category/brand bulk discounts, time-bound promotions — not built. Only manual per-line/per-bill discount *amounts* exist in billing.
+- ✅ **Promotions engine is live** — corrected 2026-08-16; the "dead code, zero runtime effect" claim was wrong. `promotion_repository.dart` exists and `cart_provider.dart` runs the promotion engine on every cart change.
+- ✅ **Coupon codes** — corrected 2026-08-16. `coupon_repository.dart` plus a validate / apply / record-usage flow in `billing_screen.dart`.
+- ⬜ Buy-X-Get-Y, slab discounts, category/brand bulk discounts, time-bound promotions — not built beyond what the promotion engine covers.
 
 ## 6. Returns, Exchange & Refunds
 
-- ⬜ **Entirely not built.** Zero matches for `refund`, `exchange`, `sales_return` anywhere in `lib/`. No return workflow, no exchange flow, no refund-method selection, no reason capture. This is a bigger gap than the original doc's item-by-item ⬜ list implied — there is no scaffolding at all to build on.
+- ✅ **Built** — corrected 2026-08-16; the earlier "entirely not built, zero matches" claim was badly wrong. `lib/features/returns/` and `lib/features/exchange/` both exist and are routed, backed by `sales_return_repository.dart` and `exchange_repository.dart`, with refund-method selection, reason capture, per-line restock/damage toggles and a manager-approval gate.
+- ✅ **Sale cancellation** — a separate whole-bill void path (`sale_cancellation_repository.dart`) that reverses stock, customer balance, loyalty points and (since 2026-08-16) the sale's GL entries.
+- ⬜ Credit/debit-note numbering against returns — not built (see §8).
 
 ## 7. Payments
 
@@ -74,14 +82,14 @@ Status legend: ✅ Built and wired | 🔶 Partially built / wired but incomplete
 
 ## 9. Multi-Store & Sync Architecture
 
-- ⬜ **Confirmed: Supabase is not implemented at all**, not even scaffolded. No `supabase`/`supabase_flutter` dependency in `pubspec.yaml`, no `supabase` string anywhere in `lib/`. `sync_service.dart` (21 lines) only writes to a local `sync_queue` table via `DatabaseHelper.queueSync` — nothing ever reads or pushes that queue anywhere. It's an unconsumed local outbox, not a sync client.
+- 🔶 **Supabase is scaffolded, not operating** — corrected 2026-08-16; the earlier "no dependency, no string anywhere" claim was wrong. `pubspec.yaml` declares `supabase_flutter: ^2.5.0` and `supabase_sync_service.dart` exists. The local `sync_queue` outbox is still the only thing every write reaches, so treat multi-store sync as unproven until someone demonstrates a round trip.
 - ⬜ Store isolation, central dashboard, conflict resolution strategy, product/price push from HQ, inter-store transfer sync, sync status indicator — all depend on the above and are not built.
 
 ## 10. Reporting & Analytics
 
 - ✅ `reports_screen.dart` has 6 real DB-backed tabs (Sales, Stock, Purchase, GST, Profit & Loss, More) via `report_service.dart` — genuinely computed, not placeholder data. P&L tab now also shows Cost of Goods Sold.
 - ✅ Sales History, Sales Summary, and Quotations are now reachable from a "More" tab inside Reports. **Deliberately left** as separate top-level routes too, still open to every role — they're intentionally cashier-accessible (see Known Bugs below for why gating them would have been wrong), so this was a discoverability fix, not a permissions change.
-- 🔶 **Day-close/Z-report** — no dedicated Z-report screen, but `counter_close_screen.dart:130-235` already does real cash reconciliation (expected cash from opening + cash sales vs counted cash, shows over/short). Closer to done than the original ⬜ implied; needs a report/printout wrapper, not the core logic.
+- 🔶 **Day-close/Z-report** — no dedicated Z-report screen, but `counter_close_screen.dart` does real cash reconciliation (expected vs counted, shows over/short); needs a report/printout wrapper, not the core logic. **Reworked 2026-08-16:** expected cash now comes from the `cash_movements` table (migration v34), not from summing sales. Previously it counted only the cash leg of sales, so khata collections and cash refunds were invisible — a cashier could collect dues, pocket exactly that amount, and still close a balanced till. Everything that moves notes now writes one row, inside its own transaction.
 - ⬜ Item/category sales report, fast/slow-mover report, stock valuation, expiry-due report, aging report, PDF/Excel export — not independently confirmed built; treat as still open.
 - ✅ `ai_analysis_screen.dart` and `product_performance_screen.dart` exist and are routed (manager-gated), reachable.
 - ✅ **Trial Balance / P&L / Balance Sheet** — real double-entry statements computed from `gl_entries`, under Reports → More → "Accounts (General Ledger)". See §15. Distinct from the existing P&L *tab*, which is computed from sales/cost-price rather than from the ledger; both exist deliberately, see the COGS note in §15.
@@ -103,11 +111,25 @@ Full detail in [docs/GL_ARCHITECTURE.md](docs/GL_ARCHITECTURE.md); reconciler-fa
 - ⚠️ **Not verified in a running app.** The three screens compile clean and are registered in `reports_screen.dart` the same way every other report is, and the service beneath them is covered by 91 tests — but no build of this app was possible in the CI container (no GTK for Linux; web blocked by pre-existing `dart:ffi` in `windows_printer.dart`). A widget smoke test was also blocked, see the note below.
 - ⚠️ **Widget tests of any `AppScaffold` screen currently fail**, GL or otherwise: `_Sidebar` builds `ListTile`s inside `Container(color: _sidebarBg)` (`app_scaffold.dart:112`, `:154`), which trips Flutter's "ListTile background color or ink splashes may be invisible" assertion on every debug render. Pre-existing and app-wide; fixing it means wrapping those tiles in their own `Material`.
 
+## 16. Phase 2 enterprise modules (landed 2026-08-16)
+
+Merged from `feature/phase2-enterprise` (PR #2). Four independent modules, each with its own architecture doc. None of these existed when this file was first written.
+
+- ✅ **Bank reconciliation** — import bank statement CSVs and match them against the GL. `bank_accounts` / `bank_statements` / `bank_transactions` (migration v30). Dates tolerate ±2 days, amounts ±0.01 and no more. `autoMatch()` only confirms same-day exact-amount hits; anything looser waits for a human. A zero variance with lines still open does **not** count as reconciled.
+- ✅ **Loyalty event log, expiry and adjustments** — see §4. Migration v31 widens the existing `bonus_points` table rather than adding a second events table. Expiry is FIFO, **off by default** (`loyalty_points_expiry_days = 0`), and run on demand by a manager — this app has no background job runner. [docs/LOYALTY_ARCHITECTURE.md](docs/LOYALTY_ARCHITECTURE.md)
+- ✅ **Payment gateways** — Razorpay implemented for real; PayPal and Square are honest stubs that report `isConfigured == false` so they can never reach the till. Migration v32. Verification is HMAC-SHA256 **plus** a server-side status check, and Razorpay's `authorized` maps to *pending*, not success. `gateway_transaction_id` is UNIQUE so a replayed callback cannot credit the shop twice. [docs/PAYMENT_GATEWAY_ARCHITECTURE.md](docs/PAYMENT_GATEWAY_ARCHITECTURE.md)
+  - ⚠️ The `payments` table is populated **only** for gateway payments. Do not read it and `sales.payment_methods` together and assume they agree.
+  - ⚠️ Gateway keys are stored unencrypted in the local SQLite file. Use a restricted key.
+- ✅ **Collections & commission** — receivables aging computed on demand from `customer_ledger` (no stored snapshot to drift), FIFO payment application, and marginal — not cliff-edged — commission tiers. Migration v33. [docs/COLLECTIONS_COMMISSION_ARCHITECTURE.md](docs/COLLECTIONS_COMMISSION_ARCHITECTURE.md)
+  - ⚠️ Sales *returns* are not deducted from commissionable sales (cancelled sales are excluded, returned ones are not) — that needs a product decision.
+- ⬜ **Open policy question, flagged by all four modules:** none of `/banking`, `/banking/reconcile`, `/loyalty`, `/payment-gateways`, `/collections`, `/commission` was added to `_accountantAllowedRoutes`. All six write, and that set is documented as a read/export-only slice. Needs a human's call.
+- ⬜ **Open accounting question:** three liabilities/expenses sit outside the GL — the loyalty points liability, gateway settlement fees, and commission payable. All three want the same new chart-of-accounts entries, so treat them as one task, not three.
+
 ## 11. User Management & Security
 
 - ✅ Role-based route gating — real (`app_router.dart` `_routeMinRole`/`_hasAccess`), admin/manager/cashier enforced.
-- 🔶 **Audit log — infrastructure exists, coverage is thin.** `audit_log` table + `DatabaseHelper.logAudit()` exist, but the **only caller in the entire codebase** is `price_override_guard.dart:97` (manager PIN approval). Voids, ordinary discounts, and stock adjustments are not logged anywhere (mostly because those features don't exist yet either).
-- ⬜ Session timeout/auto-lock on idle — not built.
+- 🔶 **Audit log — infrastructure exists, coverage is partial.** Corrected 2026-08-16: the "only caller is `price_override_guard`" claim was wrong — there are now **8** callers, including the loyalty service, exchange, cancellation and return paths, the product form, and customer payments. Ordinary discounts and stock adjustments still go unlogged.
+- ⬜ Session timeout/auto-lock on idle — not built. (`AppConstants.sessionTimeoutSeconds` was deleted 2026-08-16; a constant nothing reads implied behaviour the app doesn't have.)
 - ✅ **Shift open/close with starting/closing cash count** — solid and real (`counter_service.dart`, `counter_open_screen.dart`, `counter_close_screen.dart`).
 
 ## 12. Hardware & Peripheral Integration
@@ -119,7 +141,7 @@ Full detail in [docs/GL_ARCHITECTURE.md](docs/GL_ARCHITECTURE.md); reconciler-fa
 
 ## 13. Data Safety, Backup & Reliability
 
-- ✅ DB v7 with migration paths (as marked)
+- ✅ **DB v34** with migration paths — corrected 2026-08-16 (this file said v7; it has been wrong for 27 versions). Migration versions are contiguous through `oldVersion < 34`; the next free version is **35**. Read the version fresh from `AppConstants.dbVersion`, the highest `oldVersion <` guard, and the highest `migration_vN.dart` before adding one — a stale number here already caused one collision that had to be unpicked by hand.
 - ⬜ **Automatic local backup, DB export/import — literal no-op placeholders.** `settings_screen.dart:37-51`: both `onTap` bodies are just `// Placeholder` comments.
 - ⬜ **Crash recovery — not built.** `cart_provider.dart` is pure in-memory Riverpod state with no persistence (no `SharedPreferences` usage anywhere in `lib/`). "Hold Bill" is a *manual, explicit* action, not automatic — a crash without tapping Hold loses the cart. These are not the same mechanism, contrary to how the original doc grouped them.
 - ⬜ Restore-from-backup — not built/testable (no backup exists yet to restore from).
@@ -132,7 +154,9 @@ Full detail in [docs/GL_ARCHITECTURE.md](docs/GL_ARCHITECTURE.md); reconciler-fa
 
 ## Known Bugs — status after the 2026-08-13 fix pass
 
-All six real bugs are fixed and verified (`flutter analyze`: 0 errors; `flutter test`: 87/87 passing). One reported item didn't reproduce in code.
+All six real bugs are fixed and verified. One reported item didn't reproduce in code.
+
+*(The 87/87 figure recorded here was from the 2026-08-13 pass. As of 2026-08-16 the suite is **478 passing**, `flutter analyze` **0 errors and 0 warnings** / 138 info-level lints. The count dropped from 578 because 20 test files that never imported application code — they asserted arithmetic on local constants — were deleted; they were inflating the number without testing anything.)*
 
 - ✅ **FIXED — Dashboard mislabeled sales as profit.** `report_service.dart` `getProfitLoss()` used to compute `profit = totalSales - totalPurchases`, which for "today" (purchases usually 0) was just today's sales relabeled. Now: `sale_items.cost_price` is snapshotted at sale time (new column, `billing_service.dart`), and profit is computed as real COGS-based margin (`getCostOfGoodsSold()` in `report_service.dart`). The P&L report tab also now shows a "Cost of Goods Sold" line for transparency.
 - ✅ **FIXED — "Today's Sales" KPI card had no tap handler.** Now navigates to `/sales-history` (`dashboard_screen.dart`), matching the Low Stock and Pending Dues cards next to it.

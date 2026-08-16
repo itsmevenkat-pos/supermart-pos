@@ -16,7 +16,6 @@ dependencies:
   path: ^1.9.1
 
   # State Management
-  riverpod: ^2.4.0
   flutter_riverpod: ^2.4.0
   riverpod_annotation: ^2.3.0
 
@@ -36,7 +35,6 @@ dependencies:
   printing: ^5.13.4
   barcode: ^2.2.7
   csv: ^5.1.1
-  excel: ^2.0.0
   xml: ^6.5.0
 
   # WhatsApp Sharing (NEW)

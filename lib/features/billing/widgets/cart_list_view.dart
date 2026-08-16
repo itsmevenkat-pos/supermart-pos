@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart' show PointerScrollEvent;
-import 'package:flutter/services.dart' show LogicalKeyboardKey, KeyEvent, KeyDownEvent;
+import 'package:flutter/services.dart' show LogicalKeyboardKey, KeyDownEvent;
 import '../../../services/billing_service.dart';
 import '../../../core/utils/quantity_utils.dart';
 

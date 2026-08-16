@@ -1,6 +1,10 @@
-# supermart_pos_clean
+# SuperMart POS
 
-A new Flutter project.
+A point-of-sale application for a supermarket, built with Flutter for Windows
+desktop against a local SQLite database. Billing with barcode scanning and
+split payments, inventory and purchases, customer khata (credit) with a real
+ledger, loyalty, returns/exchanges/cancellations, double-entry accounting, bank
+reconciliation, payment gateways, collections and salesman commission.
 
 For what is and isn't built across the whole app, see
 [FEATURE_STATUS.md](FEATURE_STATUS.md) — that is the live reference.

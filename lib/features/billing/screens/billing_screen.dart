@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey, KeyEvent, KeyDownEvent, HardwareKeyboard, KeyboardLockMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../../../core/widgets/app_scaffold.dart';
 import '../../../providers/cart_provider.dart';
 import '../../../providers/product_provider.dart';
@@ -28,12 +27,10 @@ import '../../../services/invoice_service.dart';
 import '../../../services/thermal_print_service.dart';
 import '../../../services/counter_service.dart';
 import '../../../repositories/sale_repository.dart';
-import '../../../repositories/store_repository.dart';
 import '../widgets/product_grid.dart';
 import '../widgets/cart_list_view.dart';
 import '../widgets/payment_dialog.dart';
 import '../widgets/quotation_dialog.dart';
-import '../../products/screens/product_form_screen.dart';
 import '../widgets/customer_picker_dialog.dart';
 import '../../../core/permissions/price_override_guard.dart';
 import '../../../core/utils/quantity_utils.dart';
@@ -869,7 +866,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final cartItems = ref.watch(cartProvider);
     final notifier = ref.read(cartProvider.notifier);
     final authState = ref.watch(authProvider);
-    final user = authState.user;
 
     // Single source of truth for these figures now lives on the Cart
     // notifier (it already accounts for per-line discounts) instead of
@@ -1353,29 +1349,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     );
   }
 
-  Widget _actionButton(String label, IconData icon, Color color, String shortcut, VoidCallback onPressed) {
-    return ElevatedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 16),
-      label: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-          Text(shortcut, style: const TextStyle(fontSize: 9, color: Colors.white70)),
-        ],
-      ),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        minimumSize: const Size(55, 42),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(6),
-        ),
-        elevation: 2,
-      ),
-    );
-  }
 
   void _showPaymentDialog({String? preFilledMethod, bool startWithPartial = false}) {
     final cartItems = ref.watch(cartProvider);
@@ -1384,8 +1357,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     // Single source of truth for these figures now lives on the Cart
     // notifier (it already accounts for per-line discounts) instead of
     // being recomputed three different ways across this file.
-    final subtotal = notifier.subtotal;
-    final totalTax = notifier.totalTax;
     final grandTotal = notifier.grandTotal;
     final roundedTotal = grandTotal.roundToDouble();
     final roundOffAmount = roundedTotal - grandTotal;
