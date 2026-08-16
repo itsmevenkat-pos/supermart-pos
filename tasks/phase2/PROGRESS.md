@@ -76,22 +76,24 @@ diff <(norm /tmp/analyze_baseline.txt) <(norm /tmp/analyze_after.txt)
 
 ### Migration version — read fresh, every run
 
-**Re-read post-merge — the numbers below changed when PR #2 landed.** Phase 2's
-migrations were renumbered up by one during the merge (see "Post-merge state"
-at the bottom), so the four modules are now **v30, v31, v32, v33** and not the
-v29–v32 the sections further down were originally written against.
+**Re-read 2026-08-16 — `main` took v34 and the numbers below moved again.**
+Phase 2's own four modules are still **v30, v31, v32, v33** (renumbered up by
+one when PR #2 landed — see "Post-merge state" at the bottom), but the
+`cash_movements` work that landed on `main` in `aa26d7d` has since claimed
+**v34**. The previous version of this section told the next run that 34 was
+free; it is not.
 
-As of the merge, read fresh from the source:
+As of `main` @ `aa26d7d`, read fresh from the source:
 
-- `AppConstants.dbVersion` — **33**
-- highest `if (oldVersion < N)` block — **33**
-- highest `migration_vN.dart` on disk — **v33**
+- `AppConstants.dbVersion` — **34**
+- highest `if (oldVersion < N)` block — **34**
+- highest `migration_vN.dart` on disk — **v34**
 
-**The next migration therefore takes 34, not 33.** Post-merge these three are
-finally aligned (`MigrationVn` is guarded by `oldVersion < n`, and `dbVersion`
-equals the highest `n`), so a new migration means: add `migration_v34.dart`, an
-`if (oldVersion < 34)` block, a `MigrationV34.up()` call in `MigrationV1`, and
-`dbVersion = 34`.
+**The next migration therefore takes 35.** These three remain aligned
+(`MigrationVn` is guarded by `oldVersion < n`, and `dbVersion` equals the
+highest `n`), so a new migration means: add `migration_v35.dart`, an
+`if (oldVersion < 35)` block, a `MigrationV35.up()` call in `MigrationV1`, and
+`dbVersion = 35`.
 
 This is worth being careful about, because the collision it guards against has
 already happened once for real: Phase 2's branch was cut before the packing-date
@@ -892,9 +894,10 @@ outstanding is a human's attention, not more code:
    described is gone. There are no open Phase 2 PRs. A future run that finds
    nothing to do here should confirm cheaply — all four modules done, no fifth
    task file, no open Phase 2 PR, `origin/main` carrying no new Phase 2 work,
-   and the migration chain reading `dbVersion = 33` / guards through
-   `oldVersion < 33` / files through `migration_v33.dart` — and end without
-   installing the SDK.
+   and the migration chain reading `dbVersion = 34` / guards through
+   `oldVersion < 34` / files through `migration_v34.dart` — and end without
+   installing the SDK. (**Updated 2026-08-16**: `main` took v34 for
+   `cash_movements`; next free is now **35**.)
 2. **Four decisions were flagged for a human and none has been answered.**
    They are listed per-task above; the one raised in every single module is
    whether `_accountantAllowedRoutes` should gain `/banking`,
@@ -908,15 +911,22 @@ outstanding is a human's attention, not more code:
    adding one plus a posting rule is an accounting decision. If someone wants
    the Balance Sheet to be complete, that is one coherent follow-up task
    covering all three, not three separate ones.
-4. **The Phase 1 gap that sale cancellations don't post to GL is now load-
+4. ~~**The Phase 1 gap that sale cancellations don't post to GL is now load-
    bearing in three modules** (2.1, 2.3, 2.4). It is the single highest-value
-   Phase 1 follow-up.
+   Phase 1 follow-up.~~ **Closed 2026-08-16** by `aa26d7d` on `main`, which
+   reverses a cancelled sale's ledger lines via `reverseByReference` inside the
+   cancellation's own transaction. The gap notes under Tasks 2.1, 2.3 and 2.4
+   that warn "sale cancellations still don't post to GL" are **superseded** —
+   they were true when written and are kept as the record of why each module
+   was built the way it was, but a run reading them today should not act on
+   them. In particular, "reconcile against the ledger, not the GL" (2.4) is no
+   longer necessary for cancelled credit sales.
 
 Before writing any DDL in any future work, re-read `AppConstants.dbVersion`
-and the highest `if (oldVersion < N)` block. Both read **33** as of the PR #2
-merge, so the next free version is **34** — see "Migration version — read
-fresh, every run" at the top, which is the authoritative copy. Assume nothing;
-read the source.
+and the highest `if (oldVersion < N)` block. Both read **34** as of `main`
+@ `aa26d7d`, so the next free version is **35** — see "Migration version —
+read fresh, every run" at the top, which is the authoritative copy. Assume
+nothing; read the source.
 
 **The task files were unreliable about this codebase in both directions.**
 Task 2.2's called for an events table that already existed in all but five
@@ -984,9 +994,11 @@ The cheap check, in full (no Flutter install, no `analyze`, no `test`): all
 four modules `✅ Done`; no fifth task file in `tasks/phase2/`; any open Phase 2
 PR being docs-only (`git diff --stat origin/main..HEAD` touching nothing under
 `lib/` or `test/`); `origin/main` carrying no new Phase 2 work; branch not
-behind `main`; and the migration chain reading `dbVersion = 33`, guards
-contiguous through `oldVersion < 33`, files through `migration_v33.dart` →
-next free is **34**.
+behind `main`; and the migration chain reading `dbVersion = 34`, guards
+contiguous through `oldVersion < 34`, files through `migration_v34.dart` →
+next free is **35**. (These numbers moved on 2026-08-16 when `main` took v34
+for `cash_movements`; the authoritative copy is the "Migration version" section
+at the top, which is the one to keep current.)
 
 The "no open Phase 2 PR" wording this criterion used to carry was **unsatisfiable
 by construction** and has been replaced: each idle firing writes a tally line,
@@ -1103,3 +1115,100 @@ review landing on the open PR, or a new task file in `tasks/phase2/`. Otherwise:
 do the cheap check, change nothing, and end the run silently. Six firings of
 evidence say the blocker is human attention, and pinging it more often does not
 produce more of it.
+
+## `main` moved with code (2026-08-16, seventh firing) — re-verified
+
+The first firing since PR #2 that was **not** idle. The previous entry named
+exactly one trigger that should break the silence — "`origin/main` moving with
+code in the diff" — and that is what happened, so this run installed the SDK
+and re-verified rather than doing the cheap check and ending.
+
+### What landed on `main`
+
+`origin/main` advanced `1e31506` → **`aa26d7d`**, two commits, neither from
+this routine:
+
+- **`7b96956`** — `docs/AUDIT_2026-08-16.md`, a static review of the tree at
+  `948e43d`: 3 critical, 4 high, 8 medium findings plus housekeeping and a
+  recommended order of work. Worth reading before any future task here; §7 is
+  effectively a Phase 3 backlog, which is what this routine has been asking for
+  since the second idle firing.
+- **`aa26d7d`** — closes the audit's three critical findings. Adds
+  `cash_movements` (**migration v34**) as the single writer for till cash,
+  gates and audits `/credit/receive-payment`, posts sale cancellations to the
+  GL via `reverseByReference`, and puts manager approval on credit-limit
+  raises. 14 files, +831/−34.
+
+### Consequences for Phase 2, in order of how much they matter
+
+1. **The next free migration is 35, not 34.** `main` took v34. Every place in
+   this file that said "next free is 34" has been corrected — the top
+   "Migration version" section, the cheap-check list in the idle tally, the
+   closing "before writing any DDL" paragraph, and item 1 of "Next run". This
+   is the same class of stale-number error PR #3 existed to fix, and it went
+   stale again within a day, which is the argument for reading the source
+   rather than this file.
+2. **The sale-cancellation GL gap is closed** — item 4 of "Next run", flagged
+   in Tasks 2.1, 2.3 and 2.4 and five times across the journals. Those
+   per-module gap notes are now superseded; marked as such in item 4 rather
+   than edited in place, so the reasoning behind each module survives.
+3. **Nothing in Phase 2's own code needed changing.** `lib/` and `test/` on
+   this branch are byte-identical to `main` after the merge.
+
+### Verification (Flutter 3.47.0 stable / Dart 3.13.0)
+
+Run against the **merged** tree, which is what neither `main` nor this branch
+had been tested as on its own:
+
+- `flutter analyze` — **182 issues, 0 errors**, the pre-existing baseline
+  exactly, unchanged across every Phase 1 and Phase 2 run.
+- `flutter test` (full suite) — **578 passing, 0 failures**, matching the count
+  `aa26d7d`'s own commit message claims (567 + 11 new).
+- Migration chain re-read at the source: files through `migration_v34.dart`
+  with **no duplicate version numbers**, `onUpgrade` guards contiguous through
+  `oldVersion < 34`, `dbVersion = 34`, and `MigrationV1` delegating to V28 and
+  V30–V34 (still correctly skipping V29, which is inline in V1's
+  `CREATE TABLE`). `MigrationV34`'s sales backfill is a no-op on `onCreate`,
+  where there are no sales to backfill, so the two paths do not diverge.
+
+The `flutter pub get` churn behaved as documented (`analysis_options.yaml` +
+`pubspec.lock` only); both were `git checkout --`'d and neither is in any
+commit.
+
+### One thing checked and cleared, recorded so nobody re-walks it
+
+The new cash book looks at first read like it double-counts a cash exchange,
+and it does not. `exchange_form_screen.dart:305` gives the replacement sale
+`paymentMethods: {cash: <full new-items net>}` even though the customer only
+hands over the price difference — so the sale leg records the **whole** new
+bill as cash in. The netting happens on the other leg: `ExchangeRepository`
+swaps `refundMethod` to `exchange_settled` **only** when it was
+`credit_adjust`, so a cash-settled exchange keeps `refundMethod = 'cash'` and
+`SalesReturnRepository` records a cash **out** for the refund amount. In +
+out nets to the price difference, which is what actually crossed the counter.
+
+Worth knowing because the comment in `sales_return_repository.dart` says "the
+return leg of an exchange arrives as `exchange_settled`", which is true only
+for the credit-adjust case — the comment is narrower than the code, and reading
+it literally suggests a hole that isn't there. The behaviour is correct; only
+the comment is imprecise.
+
+### Still open, still human
+
+The audit independently reached the same conclusion this journal has: its §7
+"recommended order of work" is a real backlog, and the three Phase 2 items
+escalated here appear in it ("decide the three accounting questions Phase 2
+escalated — loyalty liability, gateway fees, commission — all three want the
+same new chart-of-accounts entries, so treat them as one task"). Items 2 and 3
+of "Next run" are unchanged and still need a decision, not a run.
+
+**The repointing recommendation now has a concrete destination.** Previous
+firings could only say "point this at a Phase 3 task set" without one existing.
+`docs/AUDIT_2026-08-16.md` §7 is that set, and its Week 2 block — delete the
+20 placebo test files, write real `sqflite_common_ffi` tests for
+`sale_repository`, add the schema round-trip and route-coverage tests — is
+ordinary coding work needing no decision from anyone. This routine is still
+pointed at four Phase 2 task files that are all `✅ Done`, so it cannot pick any
+of that up on its own; the stored prompt is what would have to change. Trigger
+`trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, still enabled — and per
+the previous entry, a firing must not repoint itself.
