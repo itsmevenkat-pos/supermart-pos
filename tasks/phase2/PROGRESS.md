@@ -1075,3 +1075,31 @@ channel is not reaching anyone. A future firing that finds the situation
 unchanged should do the cheap check, notify, and **not** append a sixth tally
 line — at that point the tally has stopped being a record and become the work
 itself.
+
+### The routine's own identity, and how often to notify
+
+The sixth firing (2026-08-16 08:58 UTC) honoured that instruction — cheap check,
+no tally line — and added the two facts every prior escalation was missing,
+because "stop or repoint this routine" is not actionable without them:
+
+- **Routine:** `SuperMart POS - Phase 2 Enterprise Features`,
+  trigger `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron **`58 */2 * * *`** — every two
+  hours, **12 firings a day**, still `enabled: true`.
+- Phase 1's equivalent routine (`trig_011BbGd4VKrCYHyMHuqUiyd8`) is already
+  disabled. This one was never turned off after PR #2 merged.
+
+**A firing must not disable or repoint the routine itself.** That is a change to
+the owner's automation config, outside what the stored prompt asks for, and a
+scheduled run has no live consent to make it — the prompt's own step 9 says to
+stop and end, not to reconfigure. Report the trigger ID and let a human act.
+
+**Notification cadence: at most once per 24 hours while idle.** The fifth and
+sixth firings notified two hours apart with materially the same content, which
+is how an escalation turns into noise and gets muted — the opposite of what it
+is for. A future idle firing should notify **only** if no idle notification has
+gone out in the previous 24h (last one: **2026-08-16, sixth firing**), or if
+something genuinely new appears — `origin/main` moving with code in the diff, a
+review landing on the open PR, or a new task file in `tasks/phase2/`. Otherwise:
+do the cheap check, change nothing, and end the run silently. Six firings of
+evidence say the blocker is human attention, and pinging it more often does not
+produce more of it.
