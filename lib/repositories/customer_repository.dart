@@ -1,18 +1,23 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../core/database/database_helper.dart';
 import '../models/customer_model.dart';
 import '../models/customer_ledger_model.dart';
+import 'cash_movement_repository.dart';
 
 /// Injected via constructor so tests can pass a fake/in-memory [DatabaseHelper]
 /// instead of the real singleton. Existing call sites that used
 /// `CustomerRepository()` still compile unchanged because [dbHelper] defaults
 /// to the app-wide singleton.
 class CustomerRepository {
-  CustomerRepository({DatabaseHelper? dbHelper})
-      : _dbHelper = dbHelper ?? DatabaseHelper.instance;
+  CustomerRepository({DatabaseHelper? dbHelper, CashMovementRepository? cashMovements})
+      : _dbHelper = dbHelper ?? DatabaseHelper.instance,
+        _cashMovements = cashMovements ?? CashMovementRepository();
 
   final DatabaseHelper _dbHelper;
+  final CashMovementRepository _cashMovements;
 
   Future<List<Customer>> getAll({bool includeDeleted = false}) async {
     final db = await _dbHelper.database;
@@ -95,11 +100,20 @@ class CustomerRepository {
   /// adds `creditUsed` onto whatever `outstanding_balance` is, including a
   /// negative (advance) balance, so a customer with a ₹400 advance who buys
   /// ₹1000 on credit nets to ₹600 owed automatically.
+  /// Records money received against a customer's outstanding balance.
+  ///
+  /// [userId] is required for anything that touches cash: a cash receipt both
+  /// writes an audit row and lands in the drawer, and an unattributed
+  /// reduction of a receivable is exactly the shape of a lapping fraud. It is
+  /// optional only so existing non-cash callers keep compiling.
   Future<void> receivePayment({
     required String customerId,
     required double amount,
     required String method,
     String? note,
+    String? userId,
+    String? sessionId,
+    String? approvedByUserId,
   }) async {
     if (amount <= 0) {
       throw ArgumentError('Payment amount must be greater than zero');
@@ -160,6 +174,40 @@ class CustomerRepository {
           ).toJson(),
         );
       }
+
+      // Cash book: khata collected over the counter is real cash in the
+      // drawer. Without this the shift reconciliation could not see it, and a
+      // cashier could pocket exactly the amount collected and still close a
+      // balanced till — the single largest hole this control had.
+      if (CashMovementRepository.isCashMethod(method)) {
+        await _cashMovements.recordIn(
+          amount: amount,
+          sourceType: CashMovementSource.customerPayment,
+          sourceId: customerId,
+          sessionId: sessionId,
+          userId: userId,
+          note: note ?? 'Khata payment received from ${customer.name}',
+          executor: txn,
+        );
+      }
+
+      // Reducing a receivable is a money movement and must leave a trace,
+      // whoever did it and however it was paid.
+      await _dbHelper.logAudit(
+        userId: userId ?? 'unknown',
+        actionType: 'CUSTOMER_PAYMENT_RECEIVED',
+        tableName: 'customers',
+        recordId: customerId,
+        oldValue: jsonEncode({'outstanding_balance': customer.outstandingBalance}),
+        newValue: jsonEncode({
+          'outstanding_balance': newBalance,
+          'amount': amount,
+          'method': method,
+          'note': note,
+          'approvedByUserId': approvedByUserId,
+        }),
+        executor: txn,
+      );
 
       await _dbHelper.queueSync(
         'customers',

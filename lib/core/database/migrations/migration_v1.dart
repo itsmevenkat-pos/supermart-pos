@@ -5,6 +5,7 @@ import 'migration_v30.dart';
 import 'migration_v31.dart';
 import 'migration_v32.dart';
 import 'migration_v33.dart';
+import 'migration_v34.dart';
 
 class MigrationV1 {
   static Future<void> up(Database db) async {
@@ -743,5 +744,10 @@ class MigrationV1 {
     // the same reason as the four above. Note this one references `salesmen`
     // and `customers`, both created earlier in this method.
     await MigrationV33.up(db);
+
+    // Cash movements. Delegated for the same reason as the five above. Its
+    // backfill is a no-op here — a fresh database has no prior sales — and is
+    // guarded to stay idempotent regardless.
+    await MigrationV34.up(db);
   }
 }

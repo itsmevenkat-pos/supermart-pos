@@ -19,6 +19,7 @@ import 'migrations/migration_v30.dart';
 import 'migrations/migration_v31.dart';
 import 'migrations/migration_v32.dart';
 import 'migrations/migration_v33.dart';
+import 'migrations/migration_v34.dart';
 import '../../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -581,6 +582,14 @@ class DatabaseHelper {
           // cannot change what any customer is shown to owe. MigrationV1
           // calls the same method.
           await MigrationV33.up(db);
+        }
+
+        if (oldVersion < 34) {
+          // Cash movements: the single source of truth for expected cash at
+          // shift close — see MigrationV34. Backfills cash-in rows from
+          // existing sales so an in-flight shift does not read short after
+          // the upgrade. MigrationV1 calls the same method.
+          await MigrationV34.up(db);
         }
       },
     );

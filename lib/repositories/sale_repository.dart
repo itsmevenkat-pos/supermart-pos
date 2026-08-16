@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -11,6 +10,7 @@ import '../models/customer_ledger_model.dart';
 import '../models/product_model.dart';
 import '../core/utils/financial_year.dart';
 import '../core/utils/loyalty_utils.dart';
+import 'cash_movement_repository.dart';
 import 'product_kit_repository.dart';
 import 'stock_group_repository.dart';
 import '../services/gl_service.dart';
@@ -21,15 +21,22 @@ class SaleRepository {
     ProductKitRepository? kitRepo,
     StockGroupRepository? stockGroupRepo,
     GLService? glService,
+    CashMovementRepository? cashMovements,
   })  : _dbHelper = dbHelper ?? DatabaseHelper.instance,
         _kitRepo = kitRepo ?? ProductKitRepository(),
         _stockGroupRepo = stockGroupRepo ?? StockGroupRepository(),
-        _glService = glService ?? GLService();
+        _glService = glService ?? GLService(),
+        _cashMovements = cashMovements ?? CashMovementRepository();
 
   final DatabaseHelper _dbHelper;
   final ProductKitRepository _kitRepo;
   final StockGroupRepository _stockGroupRepo;
   final GLService _glService;
+  final CashMovementRepository _cashMovements;
+
+  /// The cash leg of a payment map, or 0 when the bill took no cash.
+  static double _cashPortionOf(Map<String, double>? paymentMethods) =>
+      paymentMethods?['cash'] ?? 0;
 
   /// Pass [txn] to run inside an already-open transaction (e.g. from
   /// [ExchangeRepository], which composes a new sale with a return
@@ -97,6 +104,23 @@ class SaleRepository {
 
       // 1. Insert sale header
       await txn.insert('sales', savedSale.toJson());
+
+      // Cash book: the notes this bill actually put in the drawer. Only the
+      // cash leg of a split payment counts — a ₹1,000 bill paid ₹400 cash +
+      // ₹600 UPI moves ₹400. `session_id` comes off the sale so the movement
+      // lands in the shift that rang it, not whichever shift is open now.
+      final cashTaken = _cashPortionOf(savedSale.paymentMethods);
+      if (cashTaken > 0) {
+        await _cashMovements.recordIn(
+          amount: cashTaken,
+          sourceType: CashMovementSource.sale,
+          sourceId: savedSale.id,
+          sessionId: savedSale.sessionId,
+          userId: savedSale.userId,
+          note: 'Cash taken on ${savedSale.invoiceDisplayNo ?? savedSale.id}',
+          executor: txn,
+        );
+      }
 
       // 2. Insert sale items and update product stock
       for (final item in items) {
@@ -422,30 +446,24 @@ class SaleRepository {
     return result.map((e) => SaleItem.fromJson(e)).toList();
   }
 
+  /// Cash taken *by sales* in a shift. Retained for reporting — shift
+  /// reconciliation must NOT use this.
+  ///
+  /// It answers "how much did selling bring in", which is not the same
+  /// question as "how much cash should be in the drawer": it cannot see khata
+  /// collections or cash refunds. Expected cash comes from
+  /// [CashMovementRepository.getSessionNet] — see `MigrationV34`.
   Future<double> getCashTotalBySession(String sessionId) async {
     final db = await _dbHelper.database;
-    // Was summing the whole sale's net_amount regardless of how it was
-    // paid — a ₹1,000 bill paid ₹400 cash + ₹600 UPI counted as ₹1,000
-    // cash, which threw off shift-closing reconciliation. Now sums only
-    // the actual cash portion recorded in each sale's payment_methods.
-    final result = await db.query(
-      'sales',
-      columns: ['payment_methods'],
-      where: 'session_id = ? AND status = ?',
-      whereArgs: [sessionId, 'completed'],
+    final rows = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(CASE direction WHEN 'in' THEN amount ELSE -amount END), 0) AS net
+      FROM cash_movements
+      WHERE session_id = ? AND source_type = ?
+      ''',
+      [sessionId, CashMovementSource.sale],
     );
-    double cashTotal = 0;
-    for (final row in result) {
-      final raw = row['payment_methods'] as String?;
-      if (raw == null || raw.isEmpty) continue;
-      try {
-        final methods = Map<String, dynamic>.from(jsonDecode(raw));
-        cashTotal += (methods['cash'] as num?)?.toDouble() ?? 0;
-      } catch (_) {
-        // Malformed/legacy row — skip rather than crash shift closing.
-      }
-    }
-    return cashTotal;
+    return (rows.first['net'] as num?)?.toDouble() ?? 0;
   }
 }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/permissions/price_override_guard.dart';
 import '../../../models/customer_model.dart';
 import '../../../providers/customer_provider.dart';
 
@@ -62,6 +63,34 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // A credit limit is how much the shop is willing to be owed, so raising
+    // one is a manager's call — otherwise a cashier could write themselves a
+    // limit and immediately sell on credit against it. Creating or editing a
+    // customer is left open, because adding a walk-in at the till is ordinary
+    // cashier work; only the limit itself is gated, and only when it goes up.
+    final previousLimit = widget.customer?.creditLimit ?? 0;
+    final requestedLimit = double.tryParse(_creditLimitController.text) ?? 0;
+    var effectiveLimit = requestedLimit;
+    if (requestedLimit > previousLimit) {
+      final approver = await requireApprovalWithApprover(
+        context,
+        ref,
+        actionLabel: 'Credit limit for ${_nameController.text.trim()} '
+            '→ ₹${requestedLimit.toStringAsFixed(2)}',
+      );
+      if (approver == null) {
+        // Refused or cancelled: keep the old limit rather than abandoning the
+        // rest of the edit, so a cashier's legitimate changes aren't lost.
+        effectiveLimit = previousLimit;
+        if (mounted) {
+          _creditLimitController.text = previousLimit.toStringAsFixed(2);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Credit limit unchanged — manager approval required')),
+          );
+        }
+      }
+    }
+
     final customer = Customer(
       id: widget.customer?.id ?? const Uuid().v4(),
       storeId: 'store_default',
@@ -70,7 +99,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
       email: _emailController.text.trim().isEmpty ? null : _emailController.text.trim(),
       address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
       locality: _localityController.text.trim().isEmpty ? null : _localityController.text.trim(),
-      creditLimit: double.tryParse(_creditLimitController.text) ?? 0,
+      creditLimit: effectiveLimit,
       loyaltyPoints: widget.customer?.loyaltyPoints ?? 0,
       totalSpent: widget.customer?.totalSpent ?? 0,
       outstandingBalance: widget.customer?.outstandingBalance ?? 0,
