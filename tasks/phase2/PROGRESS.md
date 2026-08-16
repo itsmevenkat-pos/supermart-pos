@@ -884,13 +884,17 @@ merged PR cannot carry new work.
 There is no next task in `tasks/phase2/`, and no fifth module. What is
 outstanding is a human's attention, not more code:
 
-1. ~~PR #2 needs review and merge.~~ **Done** — merged 2026-08-15. Phase 2 is
-   on `main` and verified there (see "Post-merge state" above). A future run
-   that finds nothing to do here should confirm cheaply — all four modules
-   done, `main` at `948e43d` or later with no new Phase 2 work, and the only
-   open Phase 2 PR being the docs-only **#3** — and end without installing the
-   SDK. **PR #3 is still open and needs a human to merge it**; until it does,
-   `main`'s copy of this file still carries the wrong next-migration number.
+1. ~~PR #2 needs review and merge.~~ **Done** — merged 2026-08-15.
+   ~~PR #3 is still open and needs a human to merge it.~~ **Done** — merged
+   2026-08-16 01:10 UTC. Phase 2 is on `main` and verified there (see
+   "Post-merge state" above), **and `main`'s copy of this file now carries the
+   corrected next-migration number**, so the stale-guidance risk that item
+   described is gone. There are no open Phase 2 PRs. A future run that finds
+   nothing to do here should confirm cheaply — all four modules done, no fifth
+   task file, no open Phase 2 PR, `origin/main` carrying no new Phase 2 work,
+   and the migration chain reading `dbVersion = 33` / guards through
+   `oldVersion < 33` / files through `migration_v33.dart` — and end without
+   installing the SDK.
 2. **Four decisions were flagged for a human and none has been answered.**
    They are listed per-task above; the one raised in every single module is
    whether `_accountantAllowedRoutes` should gain `/banking`,
@@ -977,10 +981,9 @@ longer without making it more useful — each such firing adds **one line** here
 A firing only graduates to its own section if something actually moved.
 
 The cheap check, in full (no Flutter install, no `analyze`, no `test`): all
-four modules `✅ Done`; no fifth task file in `tasks/phase2/`; `origin/main`
-unmoved; branch ahead of `main` by docs commits only and behind by none; the
-only open Phase 2 PR is the docs-only **#3**, still unreviewed; and the
-migration chain reads `dbVersion = 33`, guards contiguous through
+four modules `✅ Done`; no fifth task file in `tasks/phase2/`; no open Phase 2
+PR; `origin/main` carrying no new Phase 2 work; branch not behind `main`; and
+the migration chain reading `dbVersion = 33`, guards contiguous through
 `oldVersion < 33`, files through `migration_v33.dart` → next free is **34**.
 
 - **2026-08-16** — nothing moved. `origin/main` still `948e43d`; branch ahead
@@ -988,19 +991,28 @@ migration chain reads `dbVersion = 33`, guards contiguous through
   PR #3 still open, `mergeable_state: clean`, **0 comments, 0 reviews**;
   migration chain unchanged. SDK install aborted once the checks came back
   clean. No code changed.
+- **2026-08-16 (later firing)** — **PR #3 merged** at 01:10 UTC, which is the
+  one thing that moved. `origin/main` advanced `948e43d` → `1e31506` (the three
+  docs commits, nothing else), so the branch and `main` are now identical —
+  ahead 0, behind 0 — and no rebase was owed. Phase 2 PRs are now #1/#2/#3, all
+  merged, none open. Migration chain re-read at the source and unchanged:
+  `dbVersion = 33`, guards contiguous through `oldVersion < 33`, files through
+  `migration_v33.dart` → next free is still **34**. No Flutter install, no
+  `analyze`, no `test` — nothing in `lib/` changed. The two spots this file had
+  describing PR #3 as open were corrected, which is the only diff.
 
-**This is the third consecutive firing since the PR #2 merge with no work to
-do, and the fifth overall.** The blocker is not a missing task — it is that
-every remaining item needs a human:
+**PR #3 merging closes the last item on this list that a routine could do
+anything about.** With `main` now carrying the corrected migration guidance,
+the failure mode the previous entries kept warning about — an automation
+trusting `main`'s stale copy and reusing v33 — is gone. What is left needs a
+human and cannot be unblocked by another firing:
 
-1. **Merge PR #3.** Until it merges, `main`'s copy of this file still tells the
-   next run that migration **33** is free when `migration_v33.dart` exists. Any
-   automation that trusts `main` over this branch will recreate the exact v29
-   collision the PR #2 merge had to unpick by hand.
-2. The three decisions in "Next run" (items 2–4) — `_accountantAllowedRoutes`,
+1. The three decisions in "Next run" (items 2–4) — `_accountantAllowedRoutes`,
    the three off-ledger liabilities, and the Phase 1 sale-cancellation GL gap.
 
-**Recommendation: stop or repoint this routine.** It cannot advance Phase 2
-further, and each firing costs a container. Point it at a Phase 3 task set, or
-at the Phase 1 follow-up (item 4 of "Next run"), or disable it until PR #3 is
-merged and someone has answered the open questions.
+**Recommendation, now stronger: stop or repoint this routine.** Every
+mechanical item is done and merged; there is no fifth task and no open PR. Each
+further firing costs a container and can produce nothing but another line here.
+Point it at a Phase 3 task set, or at the Phase 1 follow-up (item 4 of "Next
+run") — which is the highest-value remaining work and is a real coding task, not
+a decision — or disable it until someone has answered the open questions.
