@@ -142,6 +142,54 @@ void main() {
       expect(saleRows.first['status'], 'cancelled');
     });
 
+    test('cancelSale reverses the sale\'s GL entries, leaving every touched account net zero', () async {
+      final (_, _, savedSale, savedItems) = await seedCreditSale();
+      final db = await DatabaseHelper.instance.database;
+
+      // The sale posted real entries — without this the test could pass by
+      // reversing nothing at all.
+      final beforeEntries = await db.query(
+        'gl_entries',
+        where: 'reference_type = ? AND reference_id = ?',
+        whereArgs: ['Sale', savedSale.id],
+      );
+      expect(beforeEntries, isNotEmpty, reason: 'the sale should have posted GL entries to reverse');
+      final originalCount = beforeEntries.length;
+
+      await repo.cancelSale(
+        sale: savedSale,
+        items: savedItems,
+        reason: 'Customer changed their mind',
+        refundMethod: 'cash',
+        userId: 'test-user-1',
+      );
+
+      final afterEntries = await db.query(
+        'gl_entries',
+        where: 'reference_type = ? AND reference_id = ?',
+        whereArgs: ['Sale', savedSale.id],
+      );
+      // One reversal per original line, each pointing back at what it reverses.
+      expect(afterEntries.length, originalCount * 2);
+      expect(
+        afterEntries.where((e) => e['reversal_of_entry_id'] != null).length,
+        originalCount,
+      );
+
+      // The real invariant: revenue and receivable are back to zero, so a
+      // period containing this cancellation no longer reads high.
+      final netByAccount = <String, double>{};
+      for (final e in afterEntries) {
+        final account = e['account_id'] as String;
+        final net = (e['debit'] as num).toDouble() - (e['credit'] as num).toDouble();
+        netByAccount[account] = (netByAccount[account] ?? 0) + net;
+      }
+      expect(netByAccount, isNotEmpty);
+      for (final entry in netByAccount.entries) {
+        expect(entry.value, closeTo(0, 0.01), reason: 'account ${entry.key} should net to zero after a full void');
+      }
+    });
+
     test('cancelling an already-cancelled sale throws', () async {
       final (_, _, savedSale, savedItems) = await seedCreditSale();
 

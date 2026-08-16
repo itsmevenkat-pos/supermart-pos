@@ -5,7 +5,7 @@ import '../../../models/session_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/counter_service.dart';
 import '../../../services/day_end_report_service.dart';
-import '../../../repositories/sale_repository.dart';
+import '../../../repositories/cash_movement_repository.dart';
 
 class CounterCloseScreen extends ConsumerStatefulWidget {
   const CounterCloseScreen({super.key});
@@ -56,7 +56,9 @@ class _CounterCloseScreenState extends ConsumerState<CounterCloseScreen> {
       });
       return;
     }
-    final cashSales = await SaleRepository().getCashTotalBySession(session.id);
+    // Every cash movement in this shift, not just the selling — khata
+    // collections and cash refunds move the drawer too (see MigrationV34).
+    final cashSales = await CashMovementRepository().getSessionNet(session.id);
     setState(() {
       _activeSession = session;
       _cashSalesSoFar = cashSales;
@@ -173,7 +175,7 @@ class _CounterCloseScreenState extends ConsumerState<CounterCloseScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _summaryRow('Opening Cash', '₹${session.openingCash.toStringAsFixed(2)}'),
-                _summaryRow('Cash Sales So Far', '₹${_cashSalesSoFar.toStringAsFixed(2)}'),
+                _summaryRow('Net Cash Movements', '₹${_cashSalesSoFar.toStringAsFixed(2)}'),
                 const Divider(),
                 _summaryRow(
                   'Expected Cash in Drawer',

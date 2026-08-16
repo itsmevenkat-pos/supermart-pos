@@ -5,6 +5,7 @@ import '../models/sales_return_model.dart';
 import '../models/sales_return_item_model.dart';
 import '../models/customer_ledger_model.dart';
 import '../models/stock_ledger_model.dart';
+import 'cash_movement_repository.dart';
 import 'stock_group_repository.dart';
 import '../services/gl_service.dart';
 
@@ -13,13 +14,16 @@ class SalesReturnRepository {
     DatabaseHelper? dbHelper,
     StockGroupRepository? stockGroupRepo,
     GLService? glService,
+    CashMovementRepository? cashMovements,
   })  : _dbHelper = dbHelper ?? DatabaseHelper.instance,
         _stockGroupRepo = stockGroupRepo ?? StockGroupRepository(),
-        _glService = glService ?? GLService();
+        _glService = glService ?? GLService(),
+        _cashMovements = cashMovements ?? CashMovementRepository();
 
   final DatabaseHelper _dbHelper;
   final StockGroupRepository _stockGroupRepo;
   final GLService _glService;
+  final CashMovementRepository _cashMovements;
 
   /// Inserts a return header + its lines in one transaction. Never mutates
   /// the original `sales`/`sale_items` rows — same compensating-row
@@ -151,6 +155,22 @@ class SalesReturnRepository {
       createdBy: saved.userId,
       executor: txn,
     );
+
+    // Cash book: notes handed back across the counter. Only a genuine cash
+    // refund counts — `credit_adjust` moves store credit, and the return leg
+    // of an exchange arrives as `exchange_settled` and is netted against the
+    // replacement sale rather than paid out, so neither may appear here.
+    if (CashMovementRepository.isCashMethod(saved.refundMethod)) {
+      await _cashMovements.recordOut(
+        amount: saved.refundAmount,
+        sourceType: CashMovementSource.salesReturn,
+        sourceId: saved.id,
+        sessionId: saved.sessionId,
+        userId: saved.userId,
+        note: 'Cash refund on return ${saved.id}',
+        executor: txn,
+      );
+    }
 
     await _dbHelper.queueSync('sales_returns', saved.id, 'INSERT', saved.toJson(), executor: txn);
 

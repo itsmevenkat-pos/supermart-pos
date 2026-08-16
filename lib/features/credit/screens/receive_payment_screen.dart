@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/permissions/price_override_guard.dart';
 import '../../../core/widgets/app_scaffold.dart';
 import '../../../models/customer_model.dart';
+import '../../../providers/auth_provider.dart';
 import '../../../providers/customer_provider.dart';
 import '../../../repositories/customer_repository.dart';
+import '../../../repositories/store_repository.dart';
+import '../../../services/counter_service.dart';
 
 /// Lets a cashier/manager record a payment against a customer's khata/credit
 /// balance — or, if the amount is more than they owe (or they owe nothing),
@@ -58,13 +62,42 @@ class _ReceivePaymentScreenState extends ConsumerState<ReceivePaymentScreen> {
 
     final amount = double.parse(_amountController.text);
     final advancePortion = (amount - customer.outstandingBalance.clamp(0.0, double.infinity)).clamp(0.0, amount);
+
+    final currentUser = ref.read(authProvider).user;
+    if (currentUser == null) return;
+
+    // Receiving a payment reduces a receivable, which is the same class of
+    // action as a refund — so it is gated the same way returns are, on the
+    // same configurable threshold, rather than being open to anyone who can
+    // reach the screen. Without this a cashier could clear a customer's khata
+    // and pocket the cash, with nothing to reconcile against.
+    final threshold = await StoreRepository().getReturnThreshold();
+    String? approvedByUserId;
+    if (amount > threshold) {
+      if (!mounted) return;
+      final approver = await requireApprovalWithApprover(
+        context,
+        ref,
+        actionLabel: 'Payment of ₹${amount.toStringAsFixed(2)} from ${customer.name}',
+      );
+      if (approver == null) return;
+      approvedByUserId = approver.id;
+    }
+
     setState(() => _submitting = true);
     try {
+      // The open shift, so a cash receipt lands in the drawer this cashier
+      // will have to reconcile at close (see MigrationV34).
+      final session = await CounterService().getActiveSession(currentUser.id);
+
       await CustomerRepository().receivePayment(
         customerId: customer.id,
         amount: amount,
         method: _method,
         note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+        userId: currentUser.id,
+        sessionId: session?.id,
+        approvedByUserId: approvedByUserId,
       );
       if (!mounted) return;
       final message = advancePortion > 0

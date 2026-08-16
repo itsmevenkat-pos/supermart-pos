@@ -7,6 +7,8 @@ import '../models/sale_model.dart';
 import '../models/sale_item_model.dart';
 import '../models/stock_ledger_model.dart';
 import '../models/customer_ledger_model.dart';
+import '../services/gl_service.dart';
+import 'cash_movement_repository.dart';
 import 'stock_group_repository.dart';
 
 /// Fully reverses a completed sale's stock/customer effects and marks it
@@ -15,12 +17,20 @@ import 'stock_group_repository.dart';
 /// `customer_ledger` entries, never mutate the original `sales`/`sale_items`
 /// rows other than flipping `status`).
 class SaleCancellationRepository {
-  SaleCancellationRepository({DatabaseHelper? dbHelper, StockGroupRepository? stockGroupRepo})
-      : _dbHelper = dbHelper ?? DatabaseHelper.instance,
-        _stockGroupRepo = stockGroupRepo ?? StockGroupRepository();
+  SaleCancellationRepository({
+    DatabaseHelper? dbHelper,
+    StockGroupRepository? stockGroupRepo,
+    GLService? glService,
+    CashMovementRepository? cashMovements,
+  })  : _dbHelper = dbHelper ?? DatabaseHelper.instance,
+        _stockGroupRepo = stockGroupRepo ?? StockGroupRepository(),
+        _glService = glService ?? GLService(),
+        _cashMovements = cashMovements ?? CashMovementRepository();
 
   final DatabaseHelper _dbHelper;
   final StockGroupRepository _stockGroupRepo;
+  final GLService _glService;
+  final CashMovementRepository _cashMovements;
 
   Future<SaleCancellation> cancelSale({
     required Sale sale,
@@ -211,6 +221,20 @@ class SaleCancellationRepository {
 
       await txn.insert('sale_cancellations', cancellation.toJson());
 
+      // General Ledger: a cancelled sale is a full void, so every line the
+      // sale posted is reversed outright — unlike a *return*, which posts a
+      // fresh entry for the refunded amount because it is usually partial.
+      // `reverseByReference` skips lines it has already reversed, so a retry
+      // after a partial failure cannot double-swing the balance. Posted with
+      // `txn` so the ledger commits or rolls back with the cancellation.
+      await _glService.reverseByReference(
+        GLService.saleReferenceType,
+        sale.id,
+        reason: 'Sale cancelled: $reason',
+        createdBy: userId,
+        executor: txn,
+      );
+
       await _dbHelper.logAudit(
         userId: userId,
         actionType: 'SALE_CANCELLED',
@@ -225,6 +249,20 @@ class SaleCancellationRepository {
         }),
         executor: txn,
       );
+
+      // Cash book: notes handed back when a bill is voided for cash. Refunds
+      // settled any other way move no cash and get no row.
+      if (CashMovementRepository.isCashMethod(refundMethod)) {
+        await _cashMovements.recordOut(
+          amount: cancellation.refundAmount,
+          sourceType: CashMovementSource.saleCancellation,
+          sourceId: cancellation.id,
+          sessionId: sale.sessionId,
+          userId: userId,
+          note: 'Cash refund on cancelled sale ${sale.id}',
+          executor: txn,
+        );
+      }
 
       await _dbHelper.queueSync('sale_cancellations', cancellation.id, 'INSERT', cancellation.toJson(), executor: txn);
 
