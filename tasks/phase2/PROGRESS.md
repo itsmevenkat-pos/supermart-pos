@@ -981,10 +981,18 @@ longer without making it more useful — each such firing adds **one line** here
 A firing only graduates to its own section if something actually moved.
 
 The cheap check, in full (no Flutter install, no `analyze`, no `test`): all
-four modules `✅ Done`; no fifth task file in `tasks/phase2/`; no open Phase 2
-PR; `origin/main` carrying no new Phase 2 work; branch not behind `main`; and
-the migration chain reading `dbVersion = 33`, guards contiguous through
-`oldVersion < 33`, files through `migration_v33.dart` → next free is **34**.
+four modules `✅ Done`; no fifth task file in `tasks/phase2/`; any open Phase 2
+PR being docs-only (`git diff --stat origin/main..HEAD` touching nothing under
+`lib/` or `test/`); `origin/main` carrying no new Phase 2 work; branch not
+behind `main`; and the migration chain reading `dbVersion = 33`, guards
+contiguous through `oldVersion < 33`, files through `migration_v33.dart` →
+next free is **34**.
+
+The "no open Phase 2 PR" wording this criterion used to carry was **unsatisfiable
+by construction** and has been replaced: each idle firing writes a tally line,
+which needs a commit, which opens a PR — so the very act of recording a firing
+falsifies the condition the next firing is told to check. Judge the PR by its
+diff, not by its existence.
 
 - **2026-08-16** — nothing moved. `origin/main` still `948e43d`; branch ahead
   by the same 3 docs commits (`9aa5b58`, `f1b8389`, `6ac9771`), behind by 0;
@@ -1000,6 +1008,21 @@ the migration chain reading `dbVersion = 33`, guards contiguous through
   `migration_v33.dart` → next free is still **34**. No Flutter install, no
   `analyze`, no `test` — nothing in `lib/` changed. The two spots this file had
   describing PR #3 as open were corrected, which is the only diff.
+- **2026-08-16 (third firing of the day)** — nothing moved that a run can act
+  on. `origin/main` still `1e31506`; branch ahead by exactly the one docs commit
+  `ccf8b68`, behind by 0; `git diff --stat origin/main..HEAD` touches
+  `tasks/phase2/PROGRESS.md` and nothing else, so **nothing in `lib/` or
+  `test/` differs from `main`** — no Flutter install, no `analyze`, no `test`,
+  as there is no code to measure. **PR #4 is open** (docs-only, +37/−25, one
+  file, `mergeable_state: clean`, unreviewed — `updated_at` still equal to
+  `created_at`), carrying the previous firing's tally line. It is the previous
+  run's own record of itself, not new work. Migration chain re-read at the
+  source and unchanged: `dbVersion = 33`, guards contiguous at
+  `oldVersion < 30/31/32/33`, files through `migration_v33.dart` with **no
+  duplicate version numbers**, and `MigrationV1` delegating to V28 and V30–V33
+  — correctly skipping V29, which is inline in V1's `CREATE TABLE`. Next free
+  is still **34**. The only diff this firing makes is this line plus the
+  cheap-check fix above.
 
 **PR #3 merging closes the last item on this list that a routine could do
 anything about.** With `main` now carrying the corrected migration guidance,
@@ -1010,9 +1033,12 @@ human and cannot be unblocked by another firing:
 1. The three decisions in "Next run" (items 2–4) — `_accountantAllowedRoutes`,
    the three off-ledger liabilities, and the Phase 1 sale-cancellation GL gap.
 
-**Recommendation, now stronger: stop or repoint this routine.** Every
-mechanical item is done and merged; there is no fifth task and no open PR. Each
-further firing costs a container and can produce nothing but another line here.
-Point it at a Phase 3 task set, or at the Phase 1 follow-up (item 4 of "Next
-run") — which is the highest-value remaining work and is a real coding task, not
-a decision — or disable it until someone has answered the open questions.
+**Recommendation, now stronger still: stop or repoint this routine.** Every
+mechanical item is done and merged; there is no fifth task, and the only open PR
+is this file documenting its own firings. Each further firing costs a container
+and can produce nothing but another line here — the routine has now become its
+own sole source of work, which is the clearest signal available that it should
+be repointed. Send it at a Phase 3 task set, or at the Phase 1 follow-up (item 4
+of "Next run") — which is the highest-value remaining work and is a real coding
+task, not a decision — or disable it until someone has answered the open
+questions.
