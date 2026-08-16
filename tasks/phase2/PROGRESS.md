@@ -968,3 +968,39 @@ same class of error PR #3 exists to correct:
 
 Nothing else changed. The three decisions in "Next run" (items 2–4) are still
 open and still need a human, not another run.
+
+## Idle-firing tally
+
+Phase 2 has no remaining work, so scheduled firings now find nothing to do.
+Rather than append a near-identical section each time — which makes this file
+longer without making it more useful — each such firing adds **one line** here.
+A firing only graduates to its own section if something actually moved.
+
+The cheap check, in full (no Flutter install, no `analyze`, no `test`): all
+four modules `✅ Done`; no fifth task file in `tasks/phase2/`; `origin/main`
+unmoved; branch ahead of `main` by docs commits only and behind by none; the
+only open Phase 2 PR is the docs-only **#3**, still unreviewed; and the
+migration chain reads `dbVersion = 33`, guards contiguous through
+`oldVersion < 33`, files through `migration_v33.dart` → next free is **34**.
+
+- **2026-08-16** — nothing moved. `origin/main` still `948e43d`; branch ahead
+  by the same 3 docs commits (`9aa5b58`, `f1b8389`, `6ac9771`), behind by 0;
+  PR #3 still open, `mergeable_state: clean`, **0 comments, 0 reviews**;
+  migration chain unchanged. SDK install aborted once the checks came back
+  clean. No code changed.
+
+**This is the third consecutive firing since the PR #2 merge with no work to
+do, and the fifth overall.** The blocker is not a missing task — it is that
+every remaining item needs a human:
+
+1. **Merge PR #3.** Until it merges, `main`'s copy of this file still tells the
+   next run that migration **33** is free when `migration_v33.dart` exists. Any
+   automation that trusts `main` over this branch will recreate the exact v29
+   collision the PR #2 merge had to unpick by hand.
+2. The three decisions in "Next run" (items 2–4) — `_accountantAllowedRoutes`,
+   the three off-ledger liabilities, and the Phase 1 sale-cancellation GL gap.
+
+**Recommendation: stop or repoint this routine.** It cannot advance Phase 2
+further, and each firing costs a container. Point it at a Phase 3 task set, or
+at the Phase 1 follow-up (item 4 of "Next run"), or disable it until PR #3 is
+merged and someone has answered the open questions.
