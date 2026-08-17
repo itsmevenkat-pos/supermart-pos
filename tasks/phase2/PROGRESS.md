@@ -1318,7 +1318,7 @@ way that *requires something of Phase 2* — a migration-number collision, a
 conflict on merge, a broken build or test, or a change touching Phase 2's own
 modules — not merely when the diff contains code. Plus the unchanged triggers:
 a review landing on the open PR, or a new task file in `tasks/phase2/`.
-Last idle notification: **2026-08-16, sixth firing**.
+Last idle notification: **2026-08-17 15:00 UTC, ninth firing** (see below).
 
 ### Still open, still human — unchanged
 
@@ -1337,3 +1337,36 @@ of it. What remains there is still real, decision-free work — write actual
 `sqflite_common_ffi` tests for `sale_repository`, and add the schema
 round-trip and route-coverage tests — and the 478-test suite now has a
 genuine hole where the deleted files used to provide false comfort.
+
+## Ninth firing (2026-08-17 15:00 UTC) — idle, and the 24h cadence reset
+
+Cheap check only, no SDK install, **no code changed**. Everything the check
+covers was unchanged from the eighth firing:
+
+- Four modules `✅ Done` and merged; four task files in `tasks/phase2/`, no fifth.
+- `origin/main` still **`0e9a80a`** — unmoved for ~20h. Branch ahead by 8
+  (journal-only), behind by 0; `git diff origin/main HEAD -- lib/ test/ docs/`
+  is empty, so there is no tree to measure that `main` has not measured.
+- Migration chain re-read at source: `dbVersion` **34**, guards contiguous
+  through `oldVersion < 34`, highest file `migration_v34.dart`, `MigrationV1`
+  delegating to V28 and V30–V34. **Next free is still 35.**
+- **PR #4** open, `mergeable_state: clean`, 0 review threads, `updated_at`
+  still its own last push. No human has touched it in ~20h.
+
+**This firing notified**, and that is the cadence rule working rather than an
+exception to it: the previous idle notification was the sixth firing on
+2026-08-16 (~08:58 UTC), so ~30h had passed against a 24h floor. The seventh
+and eighth firings correctly stayed silent — `main` moved, but moved in ways
+Phase 2 needed no reaction to. Nothing has moved since, so what the
+notification reports is the passage of a day with PR #4 still unreviewed and
+the routine still firing 12 times daily at completed work.
+
+The stamp above is updated to **2026-08-17 15:00 UTC** deliberately: without
+it the next firing (17:58 UTC) would measure against 2026-08-16, see >24h, and
+notify three hours after this one — the exact two-hour repeat the cadence rule
+exists to prevent. The stamp is the rule's only state; a firing that notifies
+must move it.
+
+No tally line was added, per the eighth firing's instruction. This entry exists
+only because the cadence reset is new information; a tenth idle firing with the
+stamp inside 24h should change nothing at all and end silently.
