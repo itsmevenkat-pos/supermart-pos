@@ -1113,11 +1113,13 @@ the owner's automation config, outside what the stored prompt asks for, and a
 scheduled run has no live consent to make it — the prompt's own step 9 says to
 stop and end, not to reconfigure. Report the trigger ID and let a human act.
 
-**Notification cadence: at most once per 24 hours while idle.** The fifth and
+**Notification cadence: at most one idle notification per UTC calendar day.**
+(Was "once per 24 hours"; see the tenth firing's note at the bottom for why the
+rolling window was replaced.) The fifth and
 sixth firings notified two hours apart with materially the same content, which
 is how an escalation turns into noise and gets muted — the opposite of what it
 is for. A future idle firing should notify **only** if no idle notification has
-gone out in the previous 24h (last one: **2026-08-16, sixth firing**), or if
+gone out already on the current UTC date (see the stamp below), or if
 something genuinely new appears — `origin/main` moving with code in the diff, a
 review landing on the open PR, or a new task file in `tasks/phase2/`. Otherwise:
 do the cheap check, change nothing, and end the run silently. Six firings of
@@ -1318,7 +1320,7 @@ way that *requires something of Phase 2* — a migration-number collision, a
 conflict on merge, a broken build or test, or a change touching Phase 2's own
 modules — not merely when the diff contains code. Plus the unchanged triggers:
 a review landing on the open PR, or a new task file in `tasks/phase2/`.
-Last idle notification: **2026-08-17 15:00 UTC, ninth firing** (see below).
+Last idle notification: **2026-08-18, tenth firing** (see below).
 
 ### Still open, still human — unchanged
 
@@ -1370,3 +1372,61 @@ must move it.
 No tally line was added, per the eighth firing's instruction. This entry exists
 only because the cadence reset is new information; a tenth idle firing with the
 stamp inside 24h should change nothing at all and end silently.
+
+## Tenth firing (2026-08-18 15:01 UTC) — idle, and the rolling window replaced
+
+Cheap check only, **no code changed**, no `analyze`, no `test`. Everything the
+check covers was byte-for-byte unchanged from the ninth firing 24h earlier:
+
+- Four modules `✅ Done` and merged; four task files in `tasks/phase2/`, no fifth.
+- `origin/main` still **`0e9a80a`** — unmoved for ~44h. Branch ahead by 9
+  (journal-only), behind by 0; `git diff --name-only origin/main HEAD --
+  lib/ test/ docs/` is **empty**, and the whole branch diff is
+  `tasks/phase2/PROGRESS.md` and nothing else.
+- Migration chain re-read at source: `dbVersion` **34**, guards contiguous
+  through `oldVersion < 34`, files through `migration_v34.dart` with no
+  duplicates, `MigrationV1` delegating to V28 and V30–V34 (skipping V29 by
+  design). **Next free is still 35.**
+- **PR #4** open, 0 reviews, 0 comments, `updated_at` still `2026-08-17T15:01Z`
+  — its own last push. No human has touched it in 24h, or in the ~2 days it has
+  been open.
+
+**The SDK install was launched in parallel with the git checks and aborted the
+moment they came back clean** — download killed, `/home/user/flutter` and the
+tarball removed. That is the fourth-firing lesson applied in the cheapest form:
+starting it in parallel costs nothing if you are willing to kill it, and it
+means a firing that *does* find work has not serialised a 1.5 GB download behind
+its own checks.
+
+### Why the cadence rule changed
+
+This firing notified, and doing so exposed a defect in the rule as the ninth
+firing wrote it. A rolling 24h window measured against a wall-clock stamp
+interacts badly with a `58 */2 * * *` cron: this firing cleared the stamp by
+**one minute**. Had it been a minute earlier it would have stayed silent, and
+the notification would have slid to 16:58 — then 18:58 the next day, and so on,
+drifting two hours later every day until it wrapped. A rule whose outcome turns
+on a one-minute margin is not a rule, it is a coin flip.
+
+**Replaced with "at most one idle notification per UTC calendar day."** No
+drift, no margin, and the stamp is now a date rather than a timestamp — which
+also removes the need for a firing to reason about elapsed hours at all. Intent
+is unchanged: one ping a day at most while idle, silence otherwise.
+
+### Still open, still human — unchanged from the eighth and ninth firings
+
+1. **PR #4** needs a human to merge or close it. Open since 2026-08-16, never
+   reviewed.
+2. `_accountantAllowedRoutes`, and the three off-ledger liabilities (loyalty
+   points, gateway settlement fees, commission) — which `docs/AUDIT_2026-08-16.md`
+   §7 also groups as a single task.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day, still
+   enabled. A firing must not repoint itself. The concrete destination named by
+   the seventh and eighth firings still stands and is still decision-free work:
+   `docs/AUDIT_2026-08-16.md` §7 — real `sqflite_common_ffi` tests for
+   `sale_repository`, plus schema round-trip and route-coverage tests, into the
+   hole the 20 deleted placebo tests left in the 478-test suite.
+
+An eleventh idle firing on 2026-08-18 should change nothing and end silently.
+One on a later UTC date may notify once, then stop.
