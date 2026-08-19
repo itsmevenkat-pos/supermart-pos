@@ -1320,7 +1320,7 @@ way that *requires something of Phase 2* — a migration-number collision, a
 conflict on merge, a broken build or test, or a change touching Phase 2's own
 modules — not merely when the diff contains code. Plus the unchanged triggers:
 a review landing on the open PR, or a new task file in `tasks/phase2/`.
-Last idle notification: **2026-08-18, tenth firing** (see below).
+Last idle notification: **2026-08-19, eleventh firing** (see below).
 
 ### Still open, still human — unchanged
 
@@ -1430,3 +1430,26 @@ is unchanged: one ping a day at most while idle, silence otherwise.
 
 An eleventh idle firing on 2026-08-18 should change nothing and end silently.
 One on a later UTC date may notify once, then stop.
+
+## Eleventh firing (2026-08-19 15:00 UTC) — idle, stamp moved, nothing else
+
+Cheap check only, **no SDK install, no `analyze`, no `test`, no code changed**.
+Deliberately not a new tally line and not a new journal section beyond this
+stamp note — per the eighth firing, the tally became the work itself, and the
+only thing this firing has that the tenth did not is a new UTC date.
+
+Unchanged from the tenth firing, all read from `git` and the source tree:
+`origin/main` still **`0e9a80a`** (unmoved ~68h); branch ahead 10 (journal-only),
+behind 0; `git diff --name-only origin/main HEAD` is `tasks/phase2/PROGRESS.md`
+and nothing else; four task files, no fifth; `dbVersion` **34**, guards
+contiguous through `oldVersion < 34`, files through `migration_v34.dart`, so
+**next free is still 35**; **PR #4** open, `mergeable_state: clean`, **0 reviews,
+0 comments**, `updated_at` still its own last push — unreviewed for 3 days.
+
+**The only edit this firing makes is the notification stamp above**, and it is
+load-bearing rather than bookkeeping: the cadence rule's sole state is that
+date. Notifying today without moving it would let the next firing (17:58 UTC)
+read 2026-08-18, see a later date, and notify again three hours later — the
+exact repeat the calendar-day rule replaced the rolling window to prevent.
+
+A twelfth idle firing on 2026-08-19 should change nothing and end silently.
