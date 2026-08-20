@@ -1320,7 +1320,7 @@ way that *requires something of Phase 2* — a migration-number collision, a
 conflict on merge, a broken build or test, or a change touching Phase 2's own
 modules — not merely when the diff contains code. Plus the unchanged triggers:
 a review landing on the open PR, or a new task file in `tasks/phase2/`.
-Last idle notification: **2026-08-19, eleventh firing** (see below).
+Last idle notification: **2026-08-20, twelfth firing** (see below).
 
 ### Still open, still human — unchanged
 
@@ -1453,3 +1453,50 @@ read 2026-08-18, see a later date, and notify again three hours later — the
 exact repeat the calendar-day rule replaced the rolling window to prevent.
 
 A twelfth idle firing on 2026-08-19 should change nothing and end silently.
+
+## Twelfth firing (2026-08-20) — idle, stamp moved, nothing else
+
+Same shape as the eleventh: cheap check only, **no SDK install, no `analyze`,
+no `test`, no code changed**, and the only edit is the notification stamp above.
+A new UTC date is the sole thing this firing has that the eleventh did not.
+
+Unchanged, all read from `git`, the GitHub API and the source tree:
+`origin/main` still **`0e9a80a`** — now unmoved for **~5 days**; branch ahead 11
+(journal-only), behind 0; `git diff --name-only origin/main HEAD` is
+`tasks/phase2/PROGRESS.md` and nothing else, so there is no tree to measure that
+`main` has not already measured; four task files in `tasks/phase2/`, no fifth;
+`dbVersion` **34**, guards contiguous through `oldVersion < 34`, files through
+`migration_v34.dart` with no duplicate version numbers, `MigrationV1` delegating
+to V28 and V30–V34 (skipping V29 by design, it is inline in V1's `CREATE TABLE`)
+— **next free is still 35**; **PR #4** open, **0 reviews, 0 comments**,
+`updated_at` still its own last push — now **unreviewed for 4 days**.
+
+The SDK download was launched in parallel with the git checks, per the tenth
+firing's lesson, and killed the moment they came back clean — tarball and
+`/home/user/flutter` both removed.
+
+### One correction to the eleventh firing's record
+
+It reported PR #4's `updated_at` as its own last push, which is still true, but
+the API reads **`2026-08-19T01:00:39Z`** — not the 15:00 UTC that entry stamps
+itself with. The firing times recorded in the last few entries are approximate
+and should not be read as precise; the **UTC date** is the only part the cadence
+rule depends on, and that part is sound. Future entries should stamp the date
+and skip the clock time rather than record a time they have not actually read.
+
+### Still open, still human — unchanged for a fifth consecutive firing
+
+1. **PR #4** needs a human to merge or close it. Open since 2026-08-16, never
+   reviewed, never commented on.
+2. `_accountantAllowedRoutes`, and the three off-ledger liabilities (loyalty
+   points, gateway settlement fees, commission) — grouped as one task by
+   `docs/AUDIT_2026-08-16.md` §7.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day, still
+   enabled. A firing must not repoint itself. The decision-free destination named
+   since the seventh firing still stands: `docs/AUDIT_2026-08-16.md` §7 — real
+   `sqflite_common_ffi` tests for `sale_repository`, plus the schema round-trip
+   and route-coverage tests, into the hole the 20 deleted placebo tests left in
+   the 478-test suite.
+
+A thirteenth idle firing on 2026-08-20 should change nothing and end silently.
