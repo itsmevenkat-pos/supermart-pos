@@ -48,6 +48,13 @@ Phase 1 recorded.
 
 ### Baseline, re-measured this run
 
+> **Superseded 2026-08-16 (eighth firing). Do not compare against 182/578.**
+> `main` @ `0e9a80a` deleted 20 placebo test files and cleared all 21 analyzer
+> warnings, moving the baseline to **138 issues / 0 errors / 0 warnings** and
+> **478 passing**. The numbers below are the record of the Phase 2 build runs
+> and were correct when measured; they are no longer the thing to diff against.
+> Re-measure before trusting any of it — that is the standing rule.
+
 Phase 1's numbers still hold for analyze; the test count has grown.
 
 - `flutter analyze`: **182 issues, 0 errors** — identical to Phase 1's baseline.
@@ -76,22 +83,40 @@ diff <(norm /tmp/analyze_baseline.txt) <(norm /tmp/analyze_after.txt)
 
 ### Migration version — read fresh, every run
 
-**Re-read post-merge — the numbers below changed when PR #2 landed.** Phase 2's
-migrations were renumbered up by one during the merge (see "Post-merge state"
-at the bottom), so the four modules are now **v30, v31, v32, v33** and not the
-v29–v32 the sections further down were originally written against.
+**Re-read 2026-08-16 — `main` took v34 and the numbers below moved again.**
+Phase 2's own four modules are still **v30, v31, v32, v33** (renumbered up by
+one when PR #2 landed — see "Post-merge state" at the bottom), but the
+`cash_movements` work that landed on `main` in `aa26d7d` has since claimed
+**v34**. The previous version of this section told the next run that 34 was
+free; it is not.
 
-As of the merge, read fresh from the source:
+As of `main` @ `0e9a80a` (re-read 2026-08-16, eighth firing — `main` moved
+again but took no new migration), read fresh from the source:
 
-- `AppConstants.dbVersion` — **33**
-- highest `if (oldVersion < N)` block — **33**
-- highest `migration_vN.dart` on disk — **v33**
+- `AppConstants.dbVersion` — **34**
+- highest `if (oldVersion < N)` block — **34**
+- highest `migration_vN.dart` on disk — **v34**
 
-**The next migration therefore takes 34, not 33.** Post-merge these three are
-finally aligned (`MigrationVn` is guarded by `oldVersion < n`, and `dbVersion`
-equals the highest `n`), so a new migration means: add `migration_v34.dart`, an
-`if (oldVersion < 34)` block, a `MigrationV34.up()` call in `MigrationV1`, and
-`dbVersion = 34`.
+**On `main`, the next migration would take 35.** These three remain aligned
+(`MigrationVn` is guarded by `oldVersion < n`, and `dbVersion` equals the
+highest `n`), so a new migration means: add `migration_vN.dart`, an
+`if (oldVersion < N)` block, a `MigrationVN.up()` call in `MigrationV1`, and
+`dbVersion = N`.
+
+> **⚠ But v35 is already claimed on an unmerged branch — do not take it.**
+> Re-read 2026-08-22 (sixteenth firing).
+> `origin/project3-financial-authorization-cash-management` (`d29a093`, WIP,
+> **no PR**) adds `migration_v35.dart` (`cash_movements` gains
+> `counterparty` / `approved_by_user_id` / `reason`), an `oldVersion < 35`
+> guard and `dbVersion = 35`. It is one commit on top of `0e9a80a`, so it will
+> merge cleanly and take 35 with it.
+>
+> **A new migration written today should therefore take 36**, and must re-read
+> all three places first — including `git branch -r`, which is the check every
+> previous version of this section missed. Reading only `main` is what produced
+> the v29 collision that PR #2 had to unpick by hand: `main` was not wrong, it
+> was merely not yet aware of a branch that already existed. **The lesson is
+> that "next free" is a property of every live branch, not of `main`.**
 
 This is worth being careful about, because the collision it guards against has
 already happened once for real: Phase 2's branch was cut before the packing-date
@@ -884,13 +909,18 @@ merged PR cannot carry new work.
 There is no next task in `tasks/phase2/`, and no fifth module. What is
 outstanding is a human's attention, not more code:
 
-1. ~~PR #2 needs review and merge.~~ **Done** — merged 2026-08-15. Phase 2 is
-   on `main` and verified there (see "Post-merge state" above). A future run
-   that finds nothing to do here should confirm cheaply — all four modules
-   done, `main` at `948e43d` or later with no new Phase 2 work, and the only
-   open Phase 2 PR being the docs-only **#3** — and end without installing the
-   SDK. **PR #3 is still open and needs a human to merge it**; until it does,
-   `main`'s copy of this file still carries the wrong next-migration number.
+1. ~~PR #2 needs review and merge.~~ **Done** — merged 2026-08-15.
+   ~~PR #3 is still open and needs a human to merge it.~~ **Done** — merged
+   2026-08-16 01:10 UTC. Phase 2 is on `main` and verified there (see
+   "Post-merge state" above), **and `main`'s copy of this file now carries the
+   corrected next-migration number**, so the stale-guidance risk that item
+   described is gone. There are no open Phase 2 PRs. A future run that finds
+   nothing to do here should confirm cheaply — all four modules done, no fifth
+   task file, no open Phase 2 PR, `origin/main` carrying no new Phase 2 work,
+   and the migration chain reading `dbVersion = 34` / guards through
+   `oldVersion < 34` / files through `migration_v34.dart` — and end without
+   installing the SDK. (**Updated 2026-08-16**: `main` took v34 for
+   `cash_movements`; next free is now **35**.)
 2. **Four decisions were flagged for a human and none has been answered.**
    They are listed per-task above; the one raised in every single module is
    whether `_accountantAllowedRoutes` should gain `/banking`,
@@ -904,15 +934,22 @@ outstanding is a human's attention, not more code:
    adding one plus a posting rule is an accounting decision. If someone wants
    the Balance Sheet to be complete, that is one coherent follow-up task
    covering all three, not three separate ones.
-4. **The Phase 1 gap that sale cancellations don't post to GL is now load-
+4. ~~**The Phase 1 gap that sale cancellations don't post to GL is now load-
    bearing in three modules** (2.1, 2.3, 2.4). It is the single highest-value
-   Phase 1 follow-up.
+   Phase 1 follow-up.~~ **Closed 2026-08-16** by `aa26d7d` on `main`, which
+   reverses a cancelled sale's ledger lines via `reverseByReference` inside the
+   cancellation's own transaction. The gap notes under Tasks 2.1, 2.3 and 2.4
+   that warn "sale cancellations still don't post to GL" are **superseded** —
+   they were true when written and are kept as the record of why each module
+   was built the way it was, but a run reading them today should not act on
+   them. In particular, "reconcile against the ledger, not the GL" (2.4) is no
+   longer necessary for cancelled credit sales.
 
 Before writing any DDL in any future work, re-read `AppConstants.dbVersion`
-and the highest `if (oldVersion < N)` block. Both read **33** as of the PR #2
-merge, so the next free version is **34** — see "Migration version — read
-fresh, every run" at the top, which is the authoritative copy. Assume nothing;
-read the source.
+and the highest `if (oldVersion < N)` block. Both read **34** as of `main`
+@ `aa26d7d`, so the next free version is **35** — see "Migration version —
+read fresh, every run" at the top, which is the authoritative copy. Assume
+nothing; read the source.
 
 **The task files were unreliable about this codebase in both directions.**
 Task 2.2's called for an events table that already existed in all but five
@@ -977,30 +1014,747 @@ longer without making it more useful — each such firing adds **one line** here
 A firing only graduates to its own section if something actually moved.
 
 The cheap check, in full (no Flutter install, no `analyze`, no `test`): all
-four modules `✅ Done`; no fifth task file in `tasks/phase2/`; `origin/main`
-unmoved; branch ahead of `main` by docs commits only and behind by none; the
-only open Phase 2 PR is the docs-only **#3**, still unreviewed; and the
-migration chain reads `dbVersion = 33`, guards contiguous through
-`oldVersion < 33`, files through `migration_v33.dart` → next free is **34**.
+four modules `✅ Done`; no fifth task file in `tasks/phase2/`; any open Phase 2
+PR being docs-only (`git diff --stat origin/main..HEAD` touching nothing under
+`lib/` or `test/`); `origin/main` carrying no new Phase 2 work; branch not
+behind `main`; and the migration chain reading `dbVersion = 34`, guards
+contiguous through `oldVersion < 34`, files through `migration_v34.dart` →
+next free is **35**. (These numbers moved on 2026-08-16 when `main` took v34
+for `cash_movements`; the authoritative copy is the "Migration version" section
+at the top, which is the one to keep current.)
+
+The "no open Phase 2 PR" wording this criterion used to carry was **unsatisfiable
+by construction** and has been replaced: each idle firing writes a tally line,
+which needs a commit, which opens a PR — so the very act of recording a firing
+falsifies the condition the next firing is told to check. Judge the PR by its
+diff, not by its existence.
 
 - **2026-08-16** — nothing moved. `origin/main` still `948e43d`; branch ahead
   by the same 3 docs commits (`9aa5b58`, `f1b8389`, `6ac9771`), behind by 0;
   PR #3 still open, `mergeable_state: clean`, **0 comments, 0 reviews**;
   migration chain unchanged. SDK install aborted once the checks came back
   clean. No code changed.
+- **2026-08-16 (later firing)** — **PR #3 merged** at 01:10 UTC, which is the
+  one thing that moved. `origin/main` advanced `948e43d` → `1e31506` (the three
+  docs commits, nothing else), so the branch and `main` are now identical —
+  ahead 0, behind 0 — and no rebase was owed. Phase 2 PRs are now #1/#2/#3, all
+  merged, none open. Migration chain re-read at the source and unchanged:
+  `dbVersion = 33`, guards contiguous through `oldVersion < 33`, files through
+  `migration_v33.dart` → next free is still **34**. No Flutter install, no
+  `analyze`, no `test` — nothing in `lib/` changed. The two spots this file had
+  describing PR #3 as open were corrected, which is the only diff.
+- **2026-08-16 (third firing of the day)** — nothing moved that a run can act
+  on. `origin/main` still `1e31506`; branch ahead by exactly the one docs commit
+  `ccf8b68`, behind by 0; `git diff --stat origin/main..HEAD` touches
+  `tasks/phase2/PROGRESS.md` and nothing else, so **nothing in `lib/` or
+  `test/` differs from `main`** — no Flutter install, no `analyze`, no `test`,
+  as there is no code to measure. **PR #4 is open** (docs-only, +37/−25, one
+  file, `mergeable_state: clean`, unreviewed — `updated_at` still equal to
+  `created_at`), carrying the previous firing's tally line. It is the previous
+  run's own record of itself, not new work. Migration chain re-read at the
+  source and unchanged: `dbVersion = 33`, guards contiguous at
+  `oldVersion < 30/31/32/33`, files through `migration_v33.dart` with **no
+  duplicate version numbers**, and `MigrationV1` delegating to V28 and V30–V33
+  — correctly skipping V29, which is inline in V1's `CREATE TABLE`. Next free
+  is still **34**. The only diff this firing makes is this line plus the
+  cheap-check fix above.
+- **2026-08-16 (fourth firing of the day)** — nothing moved, on any axis.
+  `origin/main` still `1e31506`; branch still `8038355`, ahead by the two docs
+  commits `ccf8b68`/`8038355`, behind by 0; `git diff --name-only
+  origin/main..HEAD -- lib/ test/` is **empty**, so there is no code to measure.
+  **PR #4 still open**, `mergeable_state: clean`, +64/−26 one file, **0 reviews**
+  — unchanged since the previous firing pushed its second commit. Migration
+  chain re-read at the source and unchanged: `dbVersion = 33`, guards contiguous
+  at `oldVersion < 28…33`, files through `migration_v33.dart` with no duplicate
+  version numbers, `MigrationV1` delegating to V28 and V30–V33 (skipping V29 by
+  design). Next free is still **34**.
 
-**This is the third consecutive firing since the PR #2 merge with no work to
-do, and the fifth overall.** The blocker is not a missing task — it is that
-every remaining item needs a human:
+  One deviation from the previous entries worth recording: the SDK install was
+  launched in parallel with the checks rather than after them, so it **finished**
+  (Flutter 3.47.0 / Dart 3.13.0) instead of being aborted. `analyze` and `test`
+  were still not run, for the same reason as before — `lib/` and `test/` are
+  byte-identical to the tree already verified at 567 passing, so a fifth
+  re-verification would measure nothing. Future firings should run the git
+  checks *first* and only then install, which is what the earlier entries
+  intended.
 
-1. **Merge PR #3.** Until it merges, `main`'s copy of this file still tells the
-   next run that migration **33** is free when `migration_v33.dart` exists. Any
-   automation that trusts `main` over this branch will recreate the exact v29
-   collision the PR #2 merge had to unpick by hand.
-2. The three decisions in "Next run" (items 2–4) — `_accountantAllowedRoutes`,
+  **This firing also sent the first push notification of the series.** Four
+  previous runs wrote "stop or repoint this routine" into a file whose whole
+  problem is that no one is reading it. Escalating out-of-band is the only
+  action left that is not another line in this tally.
+- **2026-08-22 (fifteenth firing, second of the day)** — nothing moved, and
+  this entry is deliberately **one line in the tally rather than a sixteenth
+  near-identical section**. The eleventh through fourteenth firings each grew
+  their own ~50-line section restating the same unchanged facts, which is the
+  drift this tally was created to stop; a firing with genuinely nothing new
+  belongs here. Checked: `origin/main` still `0e9a80a` (unmoved ~7 days);
+  branch ahead 14, journal-only, behind 0; `git diff --name-only origin/main
+  HEAD` is `tasks/phase2/PROGRESS.md` and nothing else; four task files, no
+  fifth; migration chain unchanged — `dbVersion = 34`, guards contiguous
+  through `oldVersion < 34`, files through `migration_v34.dart`, no duplicate
+  version numbers → next free still **35**; **PR #4** open, base `0e9a80a`,
+  head `b2d46fc`, `updated_at` `2026-08-22T19:01:33Z` (its own last push),
+  **0 reviews, 0 comments** — unreviewed for 7 days. **Did not notify**: the
+  cadence rule is at most one idle notification per UTC calendar day and the
+  fourteenth firing already notified on 2026-08-22, so the stamp needed no
+  move either. No `analyze`, no `test`, no code changed. The SDK download was
+  launched in parallel and removed with a plain `rm -rf` once the checks came
+  back clean — per the fourteenth firing's note, no `pkill` (the pattern
+  matches the killing shell; it cost that firing its cleanup, and it cost this
+  one an exit-144 shell before the same lesson was re-applied).
+
+**PR #3 merging closes the last item on this list that a routine could do
+anything about.** With `main` now carrying the corrected migration guidance,
+the failure mode the previous entries kept warning about — an automation
+trusting `main`'s stale copy and reusing v33 — is gone. What is left needs a
+human and cannot be unblocked by another firing:
+
+1. The three decisions in "Next run" (items 2–4) — `_accountantAllowedRoutes`,
    the three off-ledger liabilities, and the Phase 1 sale-cancellation GL gap.
 
-**Recommendation: stop or repoint this routine.** It cannot advance Phase 2
-further, and each firing costs a container. Point it at a Phase 3 task set, or
-at the Phase 1 follow-up (item 4 of "Next run"), or disable it until PR #3 is
-merged and someone has answered the open questions.
+**Recommendation, now stronger still: stop or repoint this routine.** Every
+mechanical item is done and merged; there is no fifth task, and the only open PR
+is this file documenting its own firings. Each further firing costs a container
+and can produce nothing but another line here — the routine has now become its
+own sole source of work, which is the clearest signal available that it should
+be repointed. Send it at a Phase 3 task set, or at the Phase 1 follow-up (item 4
+of "Next run") — which is the highest-value remaining work and is a real coding
+task, not a decision — or disable it until someone has answered the open
+questions.
+
+**Five consecutive idle firings in, that recommendation has been escalated out
+of band** (push notification, 2026-08-16). Writing it here again would repeat
+the mistake of addressing a human through a file they have not opened: PR #4 has
+sat clean and unreviewed across two firings, which is the evidence that this
+channel is not reaching anyone. A future firing that finds the situation
+unchanged should do the cheap check, notify, and **not** append a sixth tally
+line — at that point the tally has stopped being a record and become the work
+itself.
+
+### The routine's own identity, and how often to notify
+
+The sixth firing (2026-08-16 08:58 UTC) honoured that instruction — cheap check,
+no tally line — and added the two facts every prior escalation was missing,
+because "stop or repoint this routine" is not actionable without them:
+
+- **Routine:** `SuperMart POS - Phase 2 Enterprise Features`,
+  trigger `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron **`58 */2 * * *`** — every two
+  hours, **12 firings a day**, still `enabled: true`.
+- Phase 1's equivalent routine (`trig_011BbGd4VKrCYHyMHuqUiyd8`) is already
+  disabled. This one was never turned off after PR #2 merged.
+
+**A firing must not disable or repoint the routine itself.** That is a change to
+the owner's automation config, outside what the stored prompt asks for, and a
+scheduled run has no live consent to make it — the prompt's own step 9 says to
+stop and end, not to reconfigure. Report the trigger ID and let a human act.
+
+**Notification cadence: at most one idle notification per UTC calendar day.**
+(Was "once per 24 hours"; see the tenth firing's note at the bottom for why the
+rolling window was replaced.) The fifth and
+sixth firings notified two hours apart with materially the same content, which
+is how an escalation turns into noise and gets muted — the opposite of what it
+is for. A future idle firing should notify **only** if no idle notification has
+gone out already on the current UTC date (see the stamp below), or if
+something genuinely new appears — `origin/main` moving with code in the diff, a
+review landing on the open PR, or a new task file in `tasks/phase2/`. Otherwise:
+do the cheap check, change nothing, and end the run silently. Six firings of
+evidence say the blocker is human attention, and pinging it more often does not
+produce more of it.
+
+## `main` moved with code (2026-08-16, seventh firing) — re-verified
+
+The first firing since PR #2 that was **not** idle. The previous entry named
+exactly one trigger that should break the silence — "`origin/main` moving with
+code in the diff" — and that is what happened, so this run installed the SDK
+and re-verified rather than doing the cheap check and ending.
+
+### What landed on `main`
+
+`origin/main` advanced `1e31506` → **`aa26d7d`**, two commits, neither from
+this routine:
+
+- **`7b96956`** — `docs/AUDIT_2026-08-16.md`, a static review of the tree at
+  `948e43d`: 3 critical, 4 high, 8 medium findings plus housekeeping and a
+  recommended order of work. Worth reading before any future task here; §7 is
+  effectively a Phase 3 backlog, which is what this routine has been asking for
+  since the second idle firing.
+- **`aa26d7d`** — closes the audit's three critical findings. Adds
+  `cash_movements` (**migration v34**) as the single writer for till cash,
+  gates and audits `/credit/receive-payment`, posts sale cancellations to the
+  GL via `reverseByReference`, and puts manager approval on credit-limit
+  raises. 14 files, +831/−34.
+
+### Consequences for Phase 2, in order of how much they matter
+
+1. **The next free migration is 35, not 34.** `main` took v34. Every place in
+   this file that said "next free is 34" has been corrected — the top
+   "Migration version" section, the cheap-check list in the idle tally, the
+   closing "before writing any DDL" paragraph, and item 1 of "Next run". This
+   is the same class of stale-number error PR #3 existed to fix, and it went
+   stale again within a day, which is the argument for reading the source
+   rather than this file.
+2. **The sale-cancellation GL gap is closed** — item 4 of "Next run", flagged
+   in Tasks 2.1, 2.3 and 2.4 and five times across the journals. Those
+   per-module gap notes are now superseded; marked as such in item 4 rather
+   than edited in place, so the reasoning behind each module survives.
+3. **Nothing in Phase 2's own code needed changing.** `lib/` and `test/` on
+   this branch are byte-identical to `main` after the merge.
+
+### Verification (Flutter 3.47.0 stable / Dart 3.13.0)
+
+Run against the **merged** tree, which is what neither `main` nor this branch
+had been tested as on its own:
+
+- `flutter analyze` — **182 issues, 0 errors**, the pre-existing baseline
+  exactly, unchanged across every Phase 1 and Phase 2 run.
+- `flutter test` (full suite) — **578 passing, 0 failures**, matching the count
+  `aa26d7d`'s own commit message claims (567 + 11 new).
+- Migration chain re-read at the source: files through `migration_v34.dart`
+  with **no duplicate version numbers**, `onUpgrade` guards contiguous through
+  `oldVersion < 34`, `dbVersion = 34`, and `MigrationV1` delegating to V28 and
+  V30–V34 (still correctly skipping V29, which is inline in V1's
+  `CREATE TABLE`). `MigrationV34`'s sales backfill is a no-op on `onCreate`,
+  where there are no sales to backfill, so the two paths do not diverge.
+
+The `flutter pub get` churn behaved as documented (`analysis_options.yaml` +
+`pubspec.lock` only); both were `git checkout --`'d and neither is in any
+commit.
+
+### One thing checked and cleared, recorded so nobody re-walks it
+
+The new cash book looks at first read like it double-counts a cash exchange,
+and it does not. `exchange_form_screen.dart:305` gives the replacement sale
+`paymentMethods: {cash: <full new-items net>}` even though the customer only
+hands over the price difference — so the sale leg records the **whole** new
+bill as cash in. The netting happens on the other leg: `ExchangeRepository`
+swaps `refundMethod` to `exchange_settled` **only** when it was
+`credit_adjust`, so a cash-settled exchange keeps `refundMethod = 'cash'` and
+`SalesReturnRepository` records a cash **out** for the refund amount. In +
+out nets to the price difference, which is what actually crossed the counter.
+
+Worth knowing because the comment in `sales_return_repository.dart` says "the
+return leg of an exchange arrives as `exchange_settled`", which is true only
+for the credit-adjust case — the comment is narrower than the code, and reading
+it literally suggests a hole that isn't there. The behaviour is correct; only
+the comment is imprecise.
+
+### Still open, still human
+
+The audit independently reached the same conclusion this journal has: its §7
+"recommended order of work" is a real backlog, and the three Phase 2 items
+escalated here appear in it ("decide the three accounting questions Phase 2
+escalated — loyalty liability, gateway fees, commission — all three want the
+same new chart-of-accounts entries, so treat them as one task"). Items 2 and 3
+of "Next run" are unchanged and still need a decision, not a run.
+
+**The repointing recommendation now has a concrete destination.** Previous
+firings could only say "point this at a Phase 3 task set" without one existing.
+`docs/AUDIT_2026-08-16.md` §7 is that set, and its Week 2 block — delete the
+20 placebo test files, write real `sqflite_common_ffi` tests for
+`sale_repository`, add the schema round-trip and route-coverage tests — is
+ordinary coding work needing no decision from anyone. This routine is still
+pointed at four Phase 2 task files that are all `✅ Done`, so it cannot pick any
+of that up on its own; the stored prompt is what would have to change. Trigger
+`trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, still enabled — and per
+the previous entry, a firing must not repoint itself.
+
+## `main` moved with code again (2026-08-16, eighth firing) — branch resynced
+
+The second non-idle firing in a row. `origin/main` advanced `aa26d7d` →
+**`0e9a80a`** ("Clear the audit's housekeeping and doc-drift findings"), which
+is the named break-the-silence trigger from the cadence rule above, so this run
+did the full check rather than the cheap one.
+
+**Phase 2's four modules remain `✅ Done` and merged. No module work was
+available and none was invented.** What this run actually did was the one
+mechanical thing that was owed: the branch was behind `main` by that commit,
+and is no longer.
+
+### What landed on `main`
+
+`0e9a80a`, one commit, not from this routine (authored by the repo owner) —
+51 files, +52/−28,578. It closes the audit's H1, H2 and housekeeping findings:
+
+- **20 test files deleted.** They asserted arithmetic on local constants and
+  imported no application code; several still carried the scaffold comment
+  "TODO: Replace with your actual billing service import."
+- **`FEATURE_STATUS.md` corrected** — it had drifted so far it understated the
+  app, and claimed schema v7 when it is v34. The four Phase 2 modules were
+  added to it; they had never been listed.
+- **Housekeeping** — `scr/` (22 PowerShell generators, ~1MB), the `lib.zip`/
+  `test.zip` snapshots, the unused `excel` dependency, three dead constants.
+- **All 21 analyzer warnings cleared.**
+
+### The merge
+
+`git merge origin/main` into `feature/phase2-enterprise`, **clean, no
+conflicts** — `0e9a80a` touched no file under `tasks/`, so the journal could
+not collide. After the merge the branch is `main` **plus this file and nothing
+else**: `git diff origin/main HEAD -- lib/ test/` is empty.
+
+### The new baseline — this is the number that moved
+
+**138 issues / 0 errors / 0 warnings** and **478 passing** (was 182/0/21 and
+578). Both the "Baseline" section at the top and this note now say so; a run
+that diffs against 182/578 will read a 100-test drop as a catastrophic
+regression when it is a deliberate deletion of tests that never tested
+anything.
+
+### Why no Flutter install this run
+
+After the merge the branch's `lib/` and `test/` are **byte-identical to
+`main`**, and `main`'s own commit reports `analyze` and `test` results for
+exactly that tree. Installing the SDK to re-measure an identical tree would
+produce `main`'s numbers back and prove nothing — the same reasoning the third
+through sixth firings used. The commit made here is a single markdown file.
+
+What *was* verified, cheaply and from source, because Phase 2 code sits
+downstream of it:
+
+- **The 20 deleted tests really did import no application code.** Checked the
+  three whose names sit closest to Phase 2 surfaces — `loyalty_service_test`,
+  `payment_service_test`, `billing_service_test` — at `0e9a80a^`. Every one has
+  exactly one import, `package:flutter_test/flutter_test.dart`. No Phase 2
+  coverage was lost, because there was none to lose.
+- **The `lib/` changes are dead-code removal only.** Unused imports
+  (`go_router`, `store_repository`, `product_form_screen`, `customer_repository`,
+  a duplicate `KeyEvent`), two unused locals (`user`, and `subtotal`/`totalTax`
+  superseded by the cart notifier), and one unused private widget
+  (`_actionButton`). The one that could have bitten — `_ReturnLine.restocked`
+  moving from constructor default to field initializer — is safe: dropping a
+  named parameter is a **compile error** at any call site that passed it, and
+  `main` reports 0 errors, so no caller did. Default stays `true`.
+- **No new migration.** `dbVersion` is still **34**, guards still contiguous
+  through `oldVersion < 34`, highest file still `migration_v34.dart`. **Next
+  free is still 35.** `0e9a80a`'s `app_constants.dart` edit only deleted three
+  dead constants.
+
+### Branch / PR state
+
+**PR #4** (journal-only, base `main`) is still open and unreviewed. This run's
+merge and this entry push to it, so it is now up to date with `main` rather
+than trailing it by a commit.
+
+### Deliberately did not notify
+
+The cadence rule above names "`origin/main` moving with code in the diff" as a
+trigger that breaks the 24h silence, and it technically fired. This run judged
+that it should not, and the rule should be read as narrower than its letter:
+
+- The commit is **the owner's own work from today**. Notifying would report
+  their own change back to them.
+- The intent behind that trigger was "something landed that Phase 2 may need to
+  react to." Phase 2 needed no reaction — `lib/` identical, no migration
+  collision, nothing broken, nothing regressed.
+- An idle notification already went out today (sixth firing), and the seventh
+  fired two hours later. A third would be the exact pattern the cadence rule
+  was written to stop.
+
+**Refined trigger for future firings:** break silence when `main` moves in a
+way that *requires something of Phase 2* — a migration-number collision, a
+conflict on merge, a broken build or test, or a change touching Phase 2's own
+modules — not merely when the diff contains code. Plus the unchanged triggers:
+a review landing on the open PR, or a new task file in `tasks/phase2/`.
+Last idle notification: **2026-08-22, fourteenth firing** (see below).
+Last non-idle notification: **2026-08-22, sixteenth firing** (23:05 UTC, read
+from `date -u`) — a new branch claiming the next-free migration number, which
+is a named break-silence trigger, not an idle ping.
+
+**Note for the seventeenth firing (01:58 UTC, 2026-08-23):** it will open on a
+new UTC calendar date and the idle-notification stamp above will read
+2026-08-22, so the cadence rule would permit an idle ping less than three hours
+after the sixteenth firing's. **Do not take it.** The rule's intent is one ping
+a day, and the sixteenth's went out at the tail of the previous date; treat
+2026-08-23 as already spent unless something new appears that Project 3's entry
+below does not already cover.
+
+### Still open, still human — unchanged
+
+1. **PR #4** needs a human to merge or close it.
+2. The three decisions in "Next run" (items 2–3): `_accountantAllowedRoutes`,
+   and the three off-ledger liabilities (loyalty points, gateway settlement
+   fees, commission) which the audit's §7 also groups as one task.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day,
+   still enabled. A firing must not repoint itself.
+
+One note on the repoint recommendation, which has now partly expired: the
+seventh firing proposed `docs/AUDIT_2026-08-16.md` §7's Week 2 block as a
+concrete destination. `0e9a80a` has since done the placebo-test deletion half
+of it. What remains there is still real, decision-free work — write actual
+`sqflite_common_ffi` tests for `sale_repository`, and add the schema
+round-trip and route-coverage tests — and the 478-test suite now has a
+genuine hole where the deleted files used to provide false comfort.
+
+## Ninth firing (2026-08-17 15:00 UTC) — idle, and the 24h cadence reset
+
+Cheap check only, no SDK install, **no code changed**. Everything the check
+covers was unchanged from the eighth firing:
+
+- Four modules `✅ Done` and merged; four task files in `tasks/phase2/`, no fifth.
+- `origin/main` still **`0e9a80a`** — unmoved for ~20h. Branch ahead by 8
+  (journal-only), behind by 0; `git diff origin/main HEAD -- lib/ test/ docs/`
+  is empty, so there is no tree to measure that `main` has not measured.
+- Migration chain re-read at source: `dbVersion` **34**, guards contiguous
+  through `oldVersion < 34`, highest file `migration_v34.dart`, `MigrationV1`
+  delegating to V28 and V30–V34. **Next free is still 35.**
+- **PR #4** open, `mergeable_state: clean`, 0 review threads, `updated_at`
+  still its own last push. No human has touched it in ~20h.
+
+**This firing notified**, and that is the cadence rule working rather than an
+exception to it: the previous idle notification was the sixth firing on
+2026-08-16 (~08:58 UTC), so ~30h had passed against a 24h floor. The seventh
+and eighth firings correctly stayed silent — `main` moved, but moved in ways
+Phase 2 needed no reaction to. Nothing has moved since, so what the
+notification reports is the passage of a day with PR #4 still unreviewed and
+the routine still firing 12 times daily at completed work.
+
+The stamp above is updated to **2026-08-17 15:00 UTC** deliberately: without
+it the next firing (17:58 UTC) would measure against 2026-08-16, see >24h, and
+notify three hours after this one — the exact two-hour repeat the cadence rule
+exists to prevent. The stamp is the rule's only state; a firing that notifies
+must move it.
+
+No tally line was added, per the eighth firing's instruction. This entry exists
+only because the cadence reset is new information; a tenth idle firing with the
+stamp inside 24h should change nothing at all and end silently.
+
+## Tenth firing (2026-08-18 15:01 UTC) — idle, and the rolling window replaced
+
+Cheap check only, **no code changed**, no `analyze`, no `test`. Everything the
+check covers was byte-for-byte unchanged from the ninth firing 24h earlier:
+
+- Four modules `✅ Done` and merged; four task files in `tasks/phase2/`, no fifth.
+- `origin/main` still **`0e9a80a`** — unmoved for ~44h. Branch ahead by 9
+  (journal-only), behind by 0; `git diff --name-only origin/main HEAD --
+  lib/ test/ docs/` is **empty**, and the whole branch diff is
+  `tasks/phase2/PROGRESS.md` and nothing else.
+- Migration chain re-read at source: `dbVersion` **34**, guards contiguous
+  through `oldVersion < 34`, files through `migration_v34.dart` with no
+  duplicates, `MigrationV1` delegating to V28 and V30–V34 (skipping V29 by
+  design). **Next free is still 35.**
+- **PR #4** open, 0 reviews, 0 comments, `updated_at` still `2026-08-17T15:01Z`
+  — its own last push. No human has touched it in 24h, or in the ~2 days it has
+  been open.
+
+**The SDK install was launched in parallel with the git checks and aborted the
+moment they came back clean** — download killed, `/home/user/flutter` and the
+tarball removed. That is the fourth-firing lesson applied in the cheapest form:
+starting it in parallel costs nothing if you are willing to kill it, and it
+means a firing that *does* find work has not serialised a 1.5 GB download behind
+its own checks.
+
+### Why the cadence rule changed
+
+This firing notified, and doing so exposed a defect in the rule as the ninth
+firing wrote it. A rolling 24h window measured against a wall-clock stamp
+interacts badly with a `58 */2 * * *` cron: this firing cleared the stamp by
+**one minute**. Had it been a minute earlier it would have stayed silent, and
+the notification would have slid to 16:58 — then 18:58 the next day, and so on,
+drifting two hours later every day until it wrapped. A rule whose outcome turns
+on a one-minute margin is not a rule, it is a coin flip.
+
+**Replaced with "at most one idle notification per UTC calendar day."** No
+drift, no margin, and the stamp is now a date rather than a timestamp — which
+also removes the need for a firing to reason about elapsed hours at all. Intent
+is unchanged: one ping a day at most while idle, silence otherwise.
+
+### Still open, still human — unchanged from the eighth and ninth firings
+
+1. **PR #4** needs a human to merge or close it. Open since 2026-08-16, never
+   reviewed.
+2. `_accountantAllowedRoutes`, and the three off-ledger liabilities (loyalty
+   points, gateway settlement fees, commission) — which `docs/AUDIT_2026-08-16.md`
+   §7 also groups as a single task.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day, still
+   enabled. A firing must not repoint itself. The concrete destination named by
+   the seventh and eighth firings still stands and is still decision-free work:
+   `docs/AUDIT_2026-08-16.md` §7 — real `sqflite_common_ffi` tests for
+   `sale_repository`, plus schema round-trip and route-coverage tests, into the
+   hole the 20 deleted placebo tests left in the 478-test suite.
+
+An eleventh idle firing on 2026-08-18 should change nothing and end silently.
+One on a later UTC date may notify once, then stop.
+
+## Eleventh firing (2026-08-19 15:00 UTC) — idle, stamp moved, nothing else
+
+Cheap check only, **no SDK install, no `analyze`, no `test`, no code changed**.
+Deliberately not a new tally line and not a new journal section beyond this
+stamp note — per the eighth firing, the tally became the work itself, and the
+only thing this firing has that the tenth did not is a new UTC date.
+
+Unchanged from the tenth firing, all read from `git` and the source tree:
+`origin/main` still **`0e9a80a`** (unmoved ~68h); branch ahead 10 (journal-only),
+behind 0; `git diff --name-only origin/main HEAD` is `tasks/phase2/PROGRESS.md`
+and nothing else; four task files, no fifth; `dbVersion` **34**, guards
+contiguous through `oldVersion < 34`, files through `migration_v34.dart`, so
+**next free is still 35**; **PR #4** open, `mergeable_state: clean`, **0 reviews,
+0 comments**, `updated_at` still its own last push — unreviewed for 3 days.
+
+**The only edit this firing makes is the notification stamp above**, and it is
+load-bearing rather than bookkeeping: the cadence rule's sole state is that
+date. Notifying today without moving it would let the next firing (17:58 UTC)
+read 2026-08-18, see a later date, and notify again three hours later — the
+exact repeat the calendar-day rule replaced the rolling window to prevent.
+
+A twelfth idle firing on 2026-08-19 should change nothing and end silently.
+
+## Twelfth firing (2026-08-20) — idle, stamp moved, nothing else
+
+Same shape as the eleventh: cheap check only, **no SDK install, no `analyze`,
+no `test`, no code changed**, and the only edit is the notification stamp above.
+A new UTC date is the sole thing this firing has that the eleventh did not.
+
+Unchanged, all read from `git`, the GitHub API and the source tree:
+`origin/main` still **`0e9a80a`** — now unmoved for **~5 days**; branch ahead 11
+(journal-only), behind 0; `git diff --name-only origin/main HEAD` is
+`tasks/phase2/PROGRESS.md` and nothing else, so there is no tree to measure that
+`main` has not already measured; four task files in `tasks/phase2/`, no fifth;
+`dbVersion` **34**, guards contiguous through `oldVersion < 34`, files through
+`migration_v34.dart` with no duplicate version numbers, `MigrationV1` delegating
+to V28 and V30–V34 (skipping V29 by design, it is inline in V1's `CREATE TABLE`)
+— **next free is still 35**; **PR #4** open, **0 reviews, 0 comments**,
+`updated_at` still its own last push — now **unreviewed for 4 days**.
+
+The SDK download was launched in parallel with the git checks, per the tenth
+firing's lesson, and killed the moment they came back clean — tarball and
+`/home/user/flutter` both removed.
+
+### One correction to the eleventh firing's record
+
+It reported PR #4's `updated_at` as its own last push, which is still true, but
+the API reads **`2026-08-19T01:00:39Z`** — not the 15:00 UTC that entry stamps
+itself with. The firing times recorded in the last few entries are approximate
+and should not be read as precise; the **UTC date** is the only part the cadence
+rule depends on, and that part is sound. Future entries should stamp the date
+and skip the clock time rather than record a time they have not actually read.
+
+### Still open, still human — unchanged for a fifth consecutive firing
+
+1. **PR #4** needs a human to merge or close it. Open since 2026-08-16, never
+   reviewed, never commented on.
+2. `_accountantAllowedRoutes`, and the three off-ledger liabilities (loyalty
+   points, gateway settlement fees, commission) — grouped as one task by
+   `docs/AUDIT_2026-08-16.md` §7.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day, still
+   enabled. A firing must not repoint itself. The decision-free destination named
+   since the seventh firing still stands: `docs/AUDIT_2026-08-16.md` §7 — real
+   `sqflite_common_ffi` tests for `sale_repository`, plus the schema round-trip
+   and route-coverage tests, into the hole the 20 deleted placebo tests left in
+   the 478-test suite.
+
+A thirteenth idle firing on 2026-08-20 should change nothing and end silently.
+
+## Thirteenth firing (2026-08-21) — idle, stamp moved, nothing else
+
+Same shape as the eleventh and twelfth: cheap check only, **no SDK install, no
+`analyze`, no `test`, no code changed**, and the only edit is the notification
+stamp above plus this section. A new UTC date is again the sole thing this
+firing has that the previous one did not.
+
+Unchanged, all read from `git`, the GitHub API and the source tree:
+`origin/main` still **`0e9a80a`** — now unmoved for **~6 days**; branch ahead 12
+(journal-only), behind 0; `git diff --name-only origin/main HEAD` is
+`tasks/phase2/PROGRESS.md` and nothing else, so there is again no tree to
+measure that `main` has not already measured; four task files in
+`tasks/phase2/`, no fifth; `dbVersion` **34**, guards contiguous through
+`oldVersion < 34`, files through `migration_v34.dart` with no duplicate version
+numbers, `MigrationV1` delegating to V28 and V30–V34 (skipping V29 by design,
+inline in V1's `CREATE TABLE`) — **next free is still 35**; **PR #4** open,
+**0 reviews, 0 comments**, `updated_at` **`2026-08-20T01:01:23Z`**, its own last
+push — now **unreviewed for 5 days**.
+
+Per the twelfth firing's correction, this entry stamps the UTC **date** only and
+does not record a clock time it has not actually read. The PR timestamp above is
+read from the API and is exact.
+
+The SDK download was launched in parallel with the git checks, per the tenth
+firing's lesson, and killed the moment they came back clean — tarball and
+`/home/user/flutter` both removed. Worth noting the parallel launch is now
+paying for itself in the intended direction: the download completed in ~13s and
+the git checks finished well before extraction started, so aborting cost
+essentially nothing while still leaving a firing that *did* find work with a
+head start.
+
+### Still open, still human — unchanged for a sixth consecutive firing
+
+1. **PR #4** needs a human to merge or close it. Open since 2026-08-16, never
+   reviewed, never commented on.
+2. `_accountantAllowedRoutes`, and the three off-ledger liabilities (loyalty
+   points, gateway settlement fees, commission) — grouped as one task by
+   `docs/AUDIT_2026-08-16.md` §7.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day, still
+   enabled. A firing must not repoint itself. The decision-free destination named
+   since the seventh firing still stands: `docs/AUDIT_2026-08-16.md` §7 — real
+   `sqflite_common_ffi` tests for `sale_repository`, plus the schema round-trip
+   and route-coverage tests, into the hole the 20 deleted placebo tests left in
+   the 478-test suite.
+
+A fourteenth idle firing on 2026-08-21 should change nothing and end silently.
+
+## Fourteenth firing (2026-08-22) — idle, stamp moved, nothing else
+
+Same shape as the eleventh through thirteenth: cheap check only, **no
+`analyze`, no `test`, no code changed**, and the only edits are the
+notification stamp above plus this section. A new UTC date is again the sole
+thing this firing has that the previous one did not.
+
+Unchanged, all read from `git`, the GitHub API and the source tree:
+`origin/main` still **`0e9a80a`** — now unmoved for **~7 days**; branch ahead 13
+(journal-only), behind 0; `git diff --name-only origin/main HEAD` is
+`tasks/phase2/PROGRESS.md` and nothing else, so there is again no tree to
+measure that `main` has not already measured; four task files in
+`tasks/phase2/`, no fifth; `dbVersion` **34** (`lib/constants/app_constants.dart`),
+guards contiguous through `oldVersion < 34`, files through `migration_v34.dart`
+with no duplicate version numbers, `MigrationV1` delegating to V28 and V30–V34
+(skipping V29 by design, inline in V1's `CREATE TABLE`) — **next free is still
+35**; **PR #4** open, `base` at `0e9a80a`, `head` at `28d6a88`, **0 reviews,
+0 comments**, `updated_at` **`2026-08-21T01:00:30Z`**, its own last push — now
+**unreviewed for 6 days**.
+
+Per the twelfth firing's correction, this entry stamps the UTC **date** only.
+The PR timestamp above is read from the API and is exact.
+
+### One note on the SDK abort
+
+The parallel-download lesson from the tenth firing held again, with one wrinkle
+worth recording for the next firing: the abort used
+`pkill -f "flutter.tar.xz"`, and that pattern **matched the killing shell's own
+command line**, so the `rm -rf` chained after it never ran (exit 144) and the
+tarball plus `/home/user/flutter` were still on disk. The follow-up check
+caught it and a plain `rm -rf` cleaned both. If a future firing aborts the
+download, just `rm -rf` the paths — the background job dies with the container
+anyway, and a `pkill` pattern broad enough to match the tarball name is also
+broad enough to match the command doing the killing.
+
+### Still open, still human — unchanged for a seventh consecutive firing
+
+1. **PR #4** needs a human to merge or close it. Open since 2026-08-16, never
+   reviewed, never commented on.
+2. `_accountantAllowedRoutes`, and the three off-ledger liabilities (loyalty
+   points, gateway settlement fees, commission) — grouped as one task by
+   `docs/AUDIT_2026-08-16.md` §7.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day, still
+   enabled. A firing must not repoint itself. The decision-free destination named
+   since the seventh firing still stands: `docs/AUDIT_2026-08-16.md` §7 — real
+   `sqflite_common_ffi` tests for `sale_repository`, plus the schema round-trip
+   and route-coverage tests, into the hole the 20 deleted placebo tests left in
+   the 478-test suite.
+
+A fifteenth idle firing on 2026-08-22 should change nothing and end silently.
+
+**It did** — see the `2026-08-22 (fifteenth firing…)` line in the
+[Idle-firing tally](#idle-firing-tally), which is where an idle firing's record
+belongs. Sections like this one (eleventh through fourteenth) should not have
+been written; a firing only earns its own section if something actually moved.
+A sixteenth idle firing should add one tally line at most, and must not notify
+before **2026-08-23** UTC.
+
+## Sixteenth firing (2026-08-22) — NOT idle: a third branch claimed v35
+
+The previous entry budgeted this firing one tally line. It gets a section
+instead, because the thing every entry since the seventh has been watching for
+finally happened: **a branch outside this routine claimed the migration version
+this file advertises as free.** That is the named break-silence trigger, and it
+is the first genuinely new fact in eight firings.
+
+### What is new
+
+`origin/project3-financial-authorization-cash-management` — commit `d29a093`,
+"Project 3: financial authorization and cash management (WIP)", one commit on
+top of `0e9a80a`, **66 files, +14254/−687**, and **no pull request open for
+it**. No previous entry in this journal mentions this branch; it did not exist
+at the fifteenth firing.
+
+It adds `lib/core/database/migrations/migration_v35.dart` (three nullable
+columns on `cash_movements`: `counterparty`, `approved_by_user_id`, `reason`),
+an `if (oldVersion < 35)` guard, a `MigrationV35.up()` call, and
+`dbVersion = 35`.
+
+**So v35 is spoken for.** The "Migration version" section at the top now says
+so, and says the next migration should take **36**. This is the third time the
+next-free number in this file has gone stale, and the cause is the same every
+time: the number was derived from `main` alone. The correction added this run
+is the general fix — **check `git branch -r`, not just `main`**, because a
+migration number is claimed by whichever branch merges first, and `main` is by
+definition unaware of every branch that has not merged yet.
+
+Worth stating plainly for whoever picks up Project 3: **it did nothing wrong.**
+Against `main` (`dbVersion = 34`) v35 was the correct next number. The hazard
+is not its choice; it is that two workstreams reading `main` at the same time
+will both read the same "next free" and both be right.
+
+### The live hazard this exposes, which is worse than the v35 collision
+
+`main`'s own copy of this file — merged, and the copy any automation starting
+from `main` will read — still says **"next free is 34."** v34 exists on `main`
+(`aa26d7d`, `cash_movements`). So the guidance sitting on the default branch
+right now points at a number that is already taken, and the correction to it
+has been sitting in **PR #4, unreviewed, for 7 days.**
+
+That is exactly the v29 collision that had to be unpicked by hand at the PR #2
+merge, re-armed and pointed at v34, with three workstreams now live in the repo
+(this branch, Project 3, and the owner's own commits) instead of two.
+
+### Verification (Flutter 3.47.0 stable / Dart 3.13.0)
+
+The SDK was launched in parallel with the git checks per the tenth firing's
+lesson and, unlike the last six firings, was **kept and used** — because there
+was something worth measuring that no firing had ever actually measured.
+
+The 138-issue / 478-test baseline recorded by the eighth firing was **copied
+from `main`'s commit message, never independently run.** Every future run is
+told to diff against it, so a wrong number there would read as a regression in
+whatever ran next. Now measured, on this branch, from a clean container:
+
+- `flutter analyze` — **138 issues, 0 errors, 0 warnings** (138 info).
+  Confirms the recorded baseline exactly.
+- `flutter test` (full suite) — **478 passing, 0 failures.** Confirms the
+  recorded count exactly.
+
+Both numbers are now first-hand rather than second-hand. `lib/` and `test/` on
+this branch remain byte-identical to `main` (`git diff --name-only origin/main
+HEAD -- lib/ test/ docs/` is empty), so these are `main`'s numbers too.
+
+The `flutter pub get` churn behaved as documented (`analysis_options.yaml` +
+`pubspec.lock` only); both were `git checkout --`'d and neither is in this
+commit.
+
+### Unchanged
+
+Four modules `✅ Done` and merged; four task files in `tasks/phase2/`, no fifth;
+`origin/main` still **`0e9a80a`** (unmoved ~7 days); branch ahead 15
+(journal-only), behind 0; **PR #4** open, base `0e9a80a`, `updated_at`
+`2026-08-22T21:01:34Z` (its own last push), **0 reviews, 0 comments** —
+unreviewed for 7 days, and still the only open PR in the repo.
+
+### Why this firing notified
+
+The cadence rule forbids an *idle* notification before 2026-08-23 UTC. This
+firing is not idle: "a migration-number collision" is one of the four
+break-silence triggers the eighth firing named, and this is the closest the
+repo has come to one since PR #2. The notification reports the stale number on
+`main` and the unmerged v35 — not the routine's idleness, which has been
+reported eight times and does not need a ninth.
+
+### Still open, still human — unchanged for an eighth consecutive firing
+
+1. **PR #4** needs a human to merge or close it. Its whole content is the
+   corrected migration guidance, which is now **two versions stale on `main`**
+   (says 34; v34 taken, v35 claimed on Project 3's branch). This is no longer
+   bookkeeping — it is the one merge that stops the next automation from
+   picking a used number.
+2. `_accountantAllowedRoutes`, and the three off-ledger liabilities (loyalty
+   points, gateway settlement fees, commission) — grouped as one task by
+   `docs/AUDIT_2026-08-16.md` §7.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day,
+   still enabled. A firing must not repoint itself.
+
+A seventeenth firing should do the cheap check plus `git branch -r`, and if
+nothing beyond Project 3 has appeared, add one tally line and end silently —
+it must not notify again for Project 3, which is now recorded here.
