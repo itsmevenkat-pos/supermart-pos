@@ -1067,6 +1067,26 @@ diff, not by its existence.
   previous runs wrote "stop or repoint this routine" into a file whose whole
   problem is that no one is reading it. Escalating out-of-band is the only
   action left that is not another line in this tally.
+- **2026-08-22 (fifteenth firing, second of the day)** — nothing moved, and
+  this entry is deliberately **one line in the tally rather than a sixteenth
+  near-identical section**. The eleventh through fourteenth firings each grew
+  their own ~50-line section restating the same unchanged facts, which is the
+  drift this tally was created to stop; a firing with genuinely nothing new
+  belongs here. Checked: `origin/main` still `0e9a80a` (unmoved ~7 days);
+  branch ahead 14, journal-only, behind 0; `git diff --name-only origin/main
+  HEAD` is `tasks/phase2/PROGRESS.md` and nothing else; four task files, no
+  fifth; migration chain unchanged — `dbVersion = 34`, guards contiguous
+  through `oldVersion < 34`, files through `migration_v34.dart`, no duplicate
+  version numbers → next free still **35**; **PR #4** open, base `0e9a80a`,
+  head `b2d46fc`, `updated_at` `2026-08-22T19:01:33Z` (its own last push),
+  **0 reviews, 0 comments** — unreviewed for 7 days. **Did not notify**: the
+  cadence rule is at most one idle notification per UTC calendar day and the
+  fourteenth firing already notified on 2026-08-22, so the stamp needed no
+  move either. No `analyze`, no `test`, no code changed. The SDK download was
+  launched in parallel and removed with a plain `rm -rf` once the checks came
+  back clean — per the fourteenth firing's note, no `pkill` (the pattern
+  matches the killing shell; it cost that firing its cleanup, and it cost this
+  one an exit-144 shell before the same lesson was re-applied).
 
 **PR #3 merging closes the last item on this list that a routine could do
 anything about.** With `main` now carrying the corrected migration guidance,
@@ -1600,3 +1620,10 @@ broad enough to match the command doing the killing.
    the 478-test suite.
 
 A fifteenth idle firing on 2026-08-22 should change nothing and end silently.
+
+**It did** — see the `2026-08-22 (fifteenth firing…)` line in the
+[Idle-firing tally](#idle-firing-tally), which is where an idle firing's record
+belongs. Sections like this one (eleventh through fourteenth) should not have
+been written; a firing only earns its own section if something actually moved.
+A sixteenth idle firing should add one tally line at most, and must not notify
+before **2026-08-23** UTC.
