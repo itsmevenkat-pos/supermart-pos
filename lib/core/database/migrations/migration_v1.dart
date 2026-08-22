@@ -6,6 +6,7 @@ import 'migration_v31.dart';
 import 'migration_v32.dart';
 import 'migration_v33.dart';
 import 'migration_v34.dart';
+import 'migration_v35.dart';
 
 class MigrationV1 {
   static Future<void> up(Database db) async {
@@ -749,5 +750,11 @@ class MigrationV1 {
     // backfill is a no-op here — a fresh database has no prior sales — and is
     // guarded to stay idempotent regardless.
     await MigrationV34.up(db);
+
+    // The manual-cash columns on `cash_movements`. Delegated for the same
+    // reason as the six above, so a freshly created database and an upgraded
+    // one end up with identical schema. Safe to run straight after V34 — it
+    // inspects `PRAGMA table_info` and adds only what is missing.
+    await MigrationV35.up(db);
   }
 }

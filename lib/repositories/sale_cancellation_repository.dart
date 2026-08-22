@@ -7,6 +7,7 @@ import '../models/sale_model.dart';
 import '../models/sale_item_model.dart';
 import '../models/stock_ledger_model.dart';
 import '../models/customer_ledger_model.dart';
+import '../services/approval_service.dart';
 import '../services/gl_service.dart';
 import 'cash_movement_repository.dart';
 import 'stock_group_repository.dart';
@@ -22,15 +23,18 @@ class SaleCancellationRepository {
     StockGroupRepository? stockGroupRepo,
     GLService? glService,
     CashMovementRepository? cashMovements,
+    ApprovalService? approvals,
   })  : _dbHelper = dbHelper ?? DatabaseHelper.instance,
         _stockGroupRepo = stockGroupRepo ?? StockGroupRepository(),
         _glService = glService ?? GLService(),
-        _cashMovements = cashMovements ?? CashMovementRepository();
+        _cashMovements = cashMovements ?? CashMovementRepository(),
+        _approvals = approvals ?? ApprovalService();
 
   final DatabaseHelper _dbHelper;
   final StockGroupRepository _stockGroupRepo;
   final GLService _glService;
   final CashMovementRepository _cashMovements;
+  final ApprovalService _approvals;
 
   Future<SaleCancellation> cancelSale({
     required Sale sale,
@@ -58,6 +62,12 @@ class SaleCancellationRepository {
       if (returnRows.isNotEmpty) {
         throw Exception('Cannot cancel a sale that has already been returned against.');
       }
+
+      await _approvals.authoriseAlways(
+        actionLabel: 'Cancel sale',
+        approvedByUserId: approvedByUserId,
+        executor: txn,
+      );
 
       final cancellation = SaleCancellation.create(
         saleId: sale.id,
@@ -252,9 +262,23 @@ class SaleCancellationRepository {
 
       // Cash book: notes handed back when a bill is voided for cash. Refunds
       // settled any other way move no cash and get no row.
+      //
+      // The payout is capped at the cash the sale actually took, read off the
+      // sale's own payment split rather than from `refundAmount`. A cancelled
+      // *credit* sale refunds a receivable, not notes — the customer never
+      // paid anything at the till — so paying out `netAmount` in cash would
+      // hand over money that was never received, on top of clearing the debt.
+      // Same for the non-cash leg of a split bill: voiding a ₹1,000 sale paid
+      // ₹400 cash + ₹600 UPI returns ₹400 from the drawer; the ₹600 goes back
+      // the way it came, which is not a till movement. `refundAmount` on the
+      // cancellation row is deliberately left at the full value — that is what
+      // was refunded in total, across all methods.
       if (CashMovementRepository.isCashMethod(refundMethod)) {
+        final cashTakenOnSale = freshSale.paymentMethods?['cash'] ?? 0;
+        final cashToReturn =
+            cancellation.refundAmount < cashTakenOnSale ? cancellation.refundAmount : cashTakenOnSale;
         await _cashMovements.recordOut(
-          amount: cancellation.refundAmount,
+          amount: cashToReturn,
           sourceType: CashMovementSource.saleCancellation,
           sourceId: cancellation.id,
           sessionId: sale.sessionId,

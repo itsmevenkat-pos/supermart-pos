@@ -4,19 +4,16 @@ import 'package:go_router/go_router.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/ui_state_provider.dart';
+import '../navigation/app_navigation.dart';
+import '../navigation/navigation_item.dart';
 
 const _sidebarWidth = 260.0;
 const _sidebarBg = Color(0xFF1E2433);
 const _sidebarSelectedBg = Color(0xFF2A3245);
-const _flyoutWidth = 240.0;
+const _sidebarHoverBg = Color(0xFF252D3D);
+const _sidebarParentActiveBg = Color(0xFF232B3A);
+const _accentColor = Color(0xFF5C6BC0);
 
-/// `GoRouterState.of(context)` only works when this widget is built as part
-/// of a page go_router itself pushed — it throws "The parent route must be
-/// a page route to have a GoRouterState" when `AppScaffold` ends up inside a
-/// screen pushed via a plain `Navigator.push(MaterialPageRoute(...))`
-/// instead of `context.push()` (as a couple of screens do). That's only used
-/// here to highlight the current item in the sidebar, so on failure this
-/// falls back to "nothing highlighted" instead of taking down the whole app.
 String? _safeMatchedLocation(BuildContext context) {
   try {
     return GoRouterState.of(context).matchedLocation;
@@ -24,6 +21,9 @@ String? _safeMatchedLocation(BuildContext context) {
     return null;
   }
 }
+
+const _collapsedAll = '__collapsed__';
+final _expandedParentProvider = StateProvider<String?>((ref) => null);
 
 class AppScaffold extends ConsumerWidget {
   final Widget body;
@@ -91,215 +91,395 @@ class AppScaffold extends ConsumerWidget {
   }
 }
 
-/// The persistent left navigation panel — replaces the old tap-to-open
-/// overlay `Drawer` with an always-visible column that stays open across
-/// navigations until the user collapses it via the AppBar toggle.
-class _Sidebar extends ConsumerWidget {
+class _Sidebar extends ConsumerStatefulWidget {
   final String? currentRoute;
 
   const _Sidebar({required this.currentRoute});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Sidebar> createState() => _SidebarState();
+}
+
+class _SidebarState extends ConsumerState<_Sidebar> {
+  final ScrollController _scrollController = ScrollController();
+
+  String? _previousRoute;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final role = ref.watch(authProvider).user?.role;
-    final isAdmin = role == UserRole.admin;
-    final isManager = role == UserRole.manager || isAdmin;
-    // Accountant is a narrow allowlist (see _accountantAllowedRoutes in
-    // app_router.dart), not a rank between manager and cashier — it needs
-    // its own visibility checks below rather than folding into isManager.
-    final isAccountant = role == UserRole.accountant;
+    if (role == null) return const SizedBox.shrink();
+
+    final currentRoute = widget.currentRoute ?? '';
+    final expandedId = ref.watch(_expandedParentProvider);
+
+    if (_previousRoute != null && _previousRoute != currentRoute) {
+      if (expandedId == _collapsedAll) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ref.read(_expandedParentProvider.notifier).state = null;
+        });
+      }
+    }
+    _previousRoute = currentRoute;
+
+    final activeParent = findParentForRoute(currentRoute);
+    final effectiveExpanded =
+        expandedId == _collapsedAll ? null : (expandedId ?? activeParent?.id);
 
     return Container(
       color: _sidebarBg,
       child: SafeArea(
-        child: ListView(
+        child: Column(
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              child: Text(
-                'SuperMart POS',
-                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'SuperMart POS',
+                  style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                ),
               ),
             ),
-            _tile(context, 'Dashboard', Icons.dashboard, '/dashboard'),
-            _tile(context, 'Billing', Icons.point_of_sale, '/billing'),
-            if (isManager) _tile(context, 'Products', Icons.inventory, '/products'),
-            if (isManager) _tile(context, 'Promotions', Icons.local_offer, '/promotions'),
-            if (isManager) _tile(context, 'Coupons', Icons.confirmation_number, '/coupons'),
-            if (isManager) _tile(context, 'Stock Groups', Icons.merge_type, '/stock-groups'),
-            if (isManager) _tile(context, 'Bank Accounts', Icons.account_balance, '/banking'),
-            if (isManager) _tile(context, 'Loyalty Points', Icons.card_giftcard, '/loyalty'),
-            if (isManager) _tile(context, 'Payment Gateways', Icons.credit_card, '/payment-gateways'),
-            if (isManager) _tile(context, 'Collections', Icons.receipt_long, '/collections'),
-            if (isManager) _tile(context, 'Commission', Icons.percent, '/commission'),
-            _tile(context, 'Customers', Icons.people, '/customers'),
-            if (isManager || isAccountant) _tile(context, 'Suppliers', Icons.business, '/suppliers'),
-            if (isManager) _tile(context, 'Purchases', Icons.receipt_long, '/purchases'),
-            _tile(context, 'Returns', Icons.assignment_return, '/returns'),
-            _tile(context, 'Sale Cancellations', Icons.cancel_outlined, '/sales-cancellations'),
-            _tile(context, 'Exchanges', Icons.swap_horiz, '/exchanges'),
-            // Sales History, Sales Summary, and Quotations moved into
-            // Reports → Sales ("Detailed Reports") instead of living here —
-            // they were duplicated in both places before.
-            if (isManager || isAccountant) _tile(context, 'Reports', Icons.assessment, '/reports'),
-            if (isAdmin) _tile(context, 'Users', Icons.people_outline, '/users'),
-            if (isManager) _tile(context, 'Settings', Icons.settings, '/settings'),
-            if (isManager || isAccountant)
-              _UtilitiesFlyoutTile(isAdmin: isAdmin, isManager: isManager, isAccountant: isAccountant),
+            Expanded(
+              child: ListView(
+                controller: _scrollController,
+                padding: EdgeInsets.zero,
+                children: [
+                  for (final parent in appNavigation)
+                    if (parent.isVisibleTo(role))
+                      _ParentSection(
+                        parent: parent,
+                        role: role,
+                        currentRoute: currentRoute,
+                        isExpanded: effectiveExpanded == parent.id,
+                        onToggle: () {
+                          final eff = effectiveExpanded;
+                          ref.read(_expandedParentProvider.notifier).state =
+                              eff == parent.id ? _collapsedAll : parent.id;
+                        },
+                      ),
+                ],
+              ),
+            ),
+            _UserProfileSection(
+              user: ref.watch(authProvider).user!,
+              onSignOut: () {
+                ref.read(authProvider.notifier).logout();
+                context.go('/login');
+              },
+              onChangePassword: () => context.go('/change-password'),
+            ),
           ],
         ),
       ),
     );
   }
-
-  Widget _tile(BuildContext context, String title, IconData icon, String route) {
-    final isSelected = currentRoute == route;
-    return Container(
-      color: isSelected ? _sidebarSelectedBg : Colors.transparent,
-      child: ListTile(
-        leading: Icon(icon, color: isSelected ? Colors.white : Colors.white70),
-        title: Text(title, style: TextStyle(color: isSelected ? Colors.white : Colors.white70)),
-        onTap: () => context.go(route),
-      ),
-    );
-  }
 }
 
-/// "Utilities" as a flyout submenu that opens to the right of the sidebar,
-/// instead of an `ExpansionTile` that pushed every item below it down the
-/// column — with 12 sub-items that made the rest of the sidebar hard to
-/// reach without scrolling.
-class _UtilitiesFlyoutTile extends StatefulWidget {
-  final bool isAdmin;
-  final bool isManager;
-  final bool isAccountant;
+class _ParentSection extends StatelessWidget {
+  final NavParent parent;
+  final UserRole role;
+  final String currentRoute;
+  final bool isExpanded;
+  final VoidCallback onToggle;
 
-  const _UtilitiesFlyoutTile({
-    required this.isAdmin,
-    required this.isManager,
-    required this.isAccountant,
+  const _ParentSection({
+    required this.parent,
+    required this.role,
+    required this.currentRoute,
+    required this.isExpanded,
+    required this.onToggle,
   });
 
   @override
-  State<_UtilitiesFlyoutTile> createState() => _UtilitiesFlyoutTileState();
+  Widget build(BuildContext context) {
+    final isActive = parent.ownsRoute(currentRoute);
+    final visibleChildren = parent.visibleChildren(role);
+    final isLeaf = parent.directRoute != null && visibleChildren.length <= 1;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ParentTile(
+          parent: parent,
+          isActive: isActive,
+          isExpanded: isExpanded,
+          isLeaf: isLeaf,
+          onTap: () {
+            if (isLeaf) {
+              context.go(parent.directRoute ?? visibleChildren.first.route);
+            } else {
+              onToggle();
+            }
+          },
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: isExpanded && !isLeaf
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final child in visibleChildren)
+                      _ChildTile(
+                        child: child,
+                        isActive: currentRoute == child.route ||
+                            currentRoute.startsWith('${child.route}/'),
+                        onTap: () => context.go(child.route),
+                      ),
+                  ],
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
 }
 
-class _UtilitiesFlyoutTileState extends State<_UtilitiesFlyoutTile> {
-  final _layerLink = LayerLink();
-  OverlayEntry? _entry;
+class _ParentTile extends StatefulWidget {
+  final NavParent parent;
+  final bool isActive;
+  final bool isExpanded;
+  final bool isLeaf;
+  final VoidCallback onTap;
+
+  const _ParentTile({
+    required this.parent,
+    required this.isActive,
+    required this.isExpanded,
+    required this.isLeaf,
+    required this.onTap,
+  });
 
   @override
-  void dispose() {
-    _removeOverlay();
-    super.dispose();
-  }
+  State<_ParentTile> createState() => _ParentTileState();
+}
 
-  void _removeOverlay() {
-    _entry?.remove();
-    _entry = null;
-  }
-
-  void _toggle() {
-    if (_entry != null) {
-      setState(_removeOverlay);
-      return;
-    }
-    final overlay = Overlay.of(context);
-    _entry = OverlayEntry(
-      builder: (context) => Stack(
-        children: [
-          // Invisible full-screen barrier so tapping anywhere outside the
-          // flyout closes it, without blocking the app underneath visually.
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () => setState(_removeOverlay),
-            ),
-          ),
-          CompositedTransformFollower(
-            link: _layerLink,
-            showWhenUnlinked: false,
-            // The "Utilities" tile sits at the bottom of the sidebar list, so
-            // anchoring the flyout to its top (as a naive follower would)
-            // pushes the menu downward off the bottom of the window. Anchor
-            // bottom-of-flyout to bottom-of-tile instead, so it opens upward
-            // and stays fully on screen.
-            targetAnchor: Alignment.bottomRight,
-            followerAnchor: Alignment.bottomLeft,
-            child: Material(
-              color: _sidebarBg,
-              elevation: 8,
-              child: SizedBox(
-                width: _flyoutWidth,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      if (widget.isManager)
-                        _flyoutItem(context, 'Import Items', Icons.upload_file, '/utilities/import-items'),
-                      if (widget.isManager)
-                        _flyoutItem(context, 'Set Up My Business', Icons.store, '/settings/business-profile'),
-                      if (widget.isAdmin)
-                        _flyoutItem(context, 'Accountant Access', Icons.badge, '/utilities/accountant-access'),
-                      if (widget.isManager)
-                        _flyoutItem(context, 'Barcode Generator', Icons.qr_code, '/utilities/barcode-generator'),
-                      if (widget.isManager)
-                        _flyoutItem(
-                            context, 'Festival Calendar', Icons.celebration_outlined, '/utilities/festival-calendar'),
-                      if (widget.isManager)
-                        _flyoutItem(
-                            context, 'Update Items In Bulk', Icons.edit_note, '/utilities/bulk-update-items'),
-                      if (widget.isAdmin)
-                        _flyoutItem(context, 'Import From Tally', Icons.file_download, '/utilities/import-tally'),
-                      if (widget.isManager)
-                        _flyoutItem(context, 'Import Parties', Icons.group_add, '/utilities/import-parties'),
-                      if (widget.isManager)
-                        _flyoutItem(
-                            context, 'Track Your Salesmen', Icons.badge_outlined, '/utilities/track-salesmen'),
-                      if (widget.isAdmin || widget.isAccountant)
-                        _flyoutItem(context, 'Exports To Tally', Icons.file_upload, '/utilities/export-tally'),
-                      if (widget.isManager || widget.isAccountant)
-                        _flyoutItem(context, 'Export Items', Icons.download, '/utilities/export-items'),
-                      if (widget.isManager || widget.isAccountant)
-                        _flyoutItem(context, 'Verify My Data', Icons.fact_check, '/utilities/verify-data'),
-                      if (widget.isAdmin)
-                        _flyoutItem(
-                            context, 'Close Financial Year', Icons.event_busy, '/utilities/close-financial-year'),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    overlay.insert(_entry!);
-    setState(() {});
-  }
-
-  Widget _flyoutItem(BuildContext context, String title, IconData icon, String route) {
-    return ListTile(
-      leading: Icon(icon, color: Colors.white70),
-      title: Text(title, style: const TextStyle(color: Colors.white70)),
-      onTap: () {
-        setState(_removeOverlay);
-        context.go(route);
-      },
-    );
-  }
+class _ParentTileState extends State<_ParentTile> {
+  bool _hovering = false;
 
   @override
   Widget build(BuildContext context) {
-    final isOpen = _entry != null;
-    return CompositedTransformTarget(
-      link: _layerLink,
-      child: ListTile(
-        leading: const Icon(Icons.build, color: Colors.white70),
-        title: const Text('Utilities', style: TextStyle(color: Colors.white)),
-        trailing: Icon(isOpen ? Icons.chevron_left : Icons.chevron_right, color: Colors.white70),
-        onTap: _toggle,
+    Color bg;
+    if (widget.isActive && widget.isExpanded) {
+      bg = _sidebarParentActiveBg;
+    } else if (_hovering) {
+      bg = _sidebarHoverBg;
+    } else {
+      bg = Colors.transparent;
+    }
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Container(
+        color: bg,
+        child: InkWell(
+          onTap: widget.onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Icon(
+                  widget.parent.icon,
+                  size: 20,
+                  color: widget.isActive ? Colors.white : Colors.white70,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    widget.parent.label,
+                    style: TextStyle(
+                      color: widget.isActive ? Colors.white : Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (!widget.isLeaf)
+                  AnimatedRotation(
+                    turns: widget.isExpanded ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: widget.isActive ? Colors.white : Colors.white54,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChildTile extends StatefulWidget {
+  final NavChild child;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _ChildTile({
+    required this.child,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  State<_ChildTile> createState() => _ChildTileState();
+}
+
+class _ChildTileState extends State<_ChildTile> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    Color bg;
+    if (widget.isActive) {
+      bg = _sidebarSelectedBg;
+    } else if (_hovering) {
+      bg = _sidebarHoverBg;
+    } else {
+      bg = Colors.transparent;
+    }
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Container(
+        decoration: BoxDecoration(
+          color: bg,
+          border: widget.isActive
+              ? const Border(left: BorderSide(color: _accentColor, width: 3))
+              : null,
+        ),
+        child: InkWell(
+          onTap: widget.onTap,
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: widget.isActive ? 37 : 40,
+              right: 16,
+              top: 10,
+              bottom: 10,
+            ),
+            child: Row(
+              children: [
+                if (widget.child.icon != null) ...[
+                  Icon(
+                    widget.child.icon,
+                    size: 16,
+                    color: widget.isActive ? Colors.white : Colors.white60,
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Text(
+                    widget.child.label,
+                    style: TextStyle(
+                      color: widget.isActive ? Colors.white : Colors.white60,
+                      fontSize: 13,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserProfileSection extends StatelessWidget {
+  final User user;
+  final VoidCallback onSignOut;
+  final VoidCallback onChangePassword;
+
+  const _UserProfileSection({
+    required this.user,
+    required this.onSignOut,
+    required this.onChangePassword,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final roleName = user.role.name[0].toUpperCase() + user.role.name.substring(1);
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Colors.white12)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: _accentColor,
+            child: Text(
+              user.name.isNotEmpty ? user.name[0].toUpperCase() : 'U',
+              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  user.name.isNotEmpty ? user.name : user.username,
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  roleName,
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white60, size: 20),
+            color: const Color(0xFF2A3245),
+            onSelected: (value) {
+              if (value == 'password') onChangePassword();
+              if (value == 'signout') onSignOut();
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'password',
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_outline, size: 18, color: Colors.white70),
+                    SizedBox(width: 8),
+                    Text('Change Password', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'signout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 18, color: Colors.redAccent),
+                    SizedBox(width: 8),
+                    Text('Sign Out', style: TextStyle(color: Colors.redAccent)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

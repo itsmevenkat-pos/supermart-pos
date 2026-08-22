@@ -20,6 +20,7 @@ import 'migrations/migration_v31.dart';
 import 'migrations/migration_v32.dart';
 import 'migrations/migration_v33.dart';
 import 'migrations/migration_v34.dart';
+import 'migrations/migration_v35.dart';
 import '../../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -590,6 +591,14 @@ class DatabaseHelper {
           // existing sales so an in-flight shift does not read short after
           // the upgrade. MigrationV1 calls the same method.
           await MigrationV34.up(db);
+        }
+
+        if (oldVersion < 35) {
+          // Three nullable columns on `cash_movements` so a manual movement
+          // can say who authorised it, where the money went and why — see
+          // MigrationV35. Purely additive: no backfill, no existing row or
+          // query affected. MigrationV1 calls the same method.
+          await MigrationV35.up(db);
         }
       },
     );

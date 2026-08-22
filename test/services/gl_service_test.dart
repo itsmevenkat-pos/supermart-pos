@@ -739,6 +739,7 @@ void main() {
       final header = SalesReturn.create(
         storeId: 'store_default',
         userId: 'user_admin',
+        approvedByUserId: 'user_admin',
         reason: 'Damaged',
         refundMethod: 'cash',
         refundAmount: 300,
@@ -767,6 +768,7 @@ void main() {
         customerId: 'cust-gl-1',
         storeId: 'store_default',
         userId: 'user_admin',
+        approvedByUserId: 'user_admin',
         reason: 'Wrong item',
         refundMethod: 'credit_adjust',
         refundAmount: 450,
@@ -801,6 +803,7 @@ void main() {
       final header = SalesReturn.create(
         storeId: 'store_default',
         userId: 'user_admin',
+        approvedByUserId: 'user_admin',
         reason: 'One item back',
         refundMethod: 'cash',
         refundAmount: 200,

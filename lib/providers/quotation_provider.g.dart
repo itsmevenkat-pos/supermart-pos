@@ -6,7 +6,7 @@ part of 'quotation_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$quotationNotifierHash() => r'b33066cb12424f82460cb6cc70d994ddf54c3b1c';
+String _$quotationNotifierHash() => r'7b90ec26364f404e1edd8a237ccdb785d492d4f1';
 
 /// See also [QuotationNotifier].
 @ProviderFor(QuotationNotifier)

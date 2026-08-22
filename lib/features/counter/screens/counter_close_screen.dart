@@ -20,6 +20,7 @@ class _CounterCloseScreenState extends ConsumerState<CounterCloseScreen> {
 
   Session? _activeSession;
   double _cashSalesSoFar = 0;
+  double _cashDropsTotal = 0;
   bool _loading = true;
   bool _saving = false;
   bool _printingReport = false;
@@ -58,10 +59,13 @@ class _CounterCloseScreenState extends ConsumerState<CounterCloseScreen> {
     }
     // Every cash movement in this shift, not just the selling — khata
     // collections and cash refunds move the drawer too (see MigrationV34).
-    final cashSales = await CashMovementRepository().getSessionNet(session.id);
+    final cashRepo = CashMovementRepository();
+    final cashSales = await cashRepo.getSessionNet(session.id);
+    final cashDrops = await cashRepo.getSessionDropsTotal(session.id);
     setState(() {
       _activeSession = session;
       _cashSalesSoFar = cashSales;
+      _cashDropsTotal = cashDrops;
       _loading = false;
     });
   }
@@ -163,6 +167,7 @@ class _CounterCloseScreenState extends ConsumerState<CounterCloseScreen> {
 
   Widget _buildForm(Session session) {
     final expectedCash = session.openingCash + _cashSalesSoFar;
+    final businessCash = expectedCash + _cashDropsTotal;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -182,6 +187,17 @@ class _CounterCloseScreenState extends ConsumerState<CounterCloseScreen> {
                   '₹${expectedCash.toStringAsFixed(2)}',
                   bold: true,
                 ),
+                if (_cashDropsTotal > 0) ...[
+                  const SizedBox(height: 8),
+                  _summaryRow('Cash Drops to Safe', '₹${_cashDropsTotal.toStringAsFixed(2)}',
+                      color: Colors.blue),
+                  _summaryRow(
+                    'Total Business Cash',
+                    '₹${businessCash.toStringAsFixed(2)}',
+                    bold: true,
+                    color: Colors.blue.shade800,
+                  ),
+                ],
               ],
             ),
           ),

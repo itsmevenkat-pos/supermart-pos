@@ -137,6 +137,7 @@ void main() {
         newSaleItems: newSaleItems,
         settlementMethod: 'credit_adjust',
         userId: 'test-user-1',
+        approvedByUserId: 'test-user-1',
         storeId: 'store_default',
       );
 
@@ -189,6 +190,7 @@ void main() {
         newSaleItems: newSaleItems,
         settlementMethod: 'cash',
         userId: 'test-user-1',
+        approvedByUserId: 'test-user-1',
         storeId: 'store_default',
       );
 

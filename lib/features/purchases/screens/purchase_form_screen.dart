@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
+import 'package:flutter/services.dart' show LogicalKeyboardKey, KeyDownEvent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/widgets/app_scaffold.dart';
 import '../../../models/purchase_model.dart';
@@ -13,9 +15,9 @@ import '../../../repositories/purchase_repository.dart';
 import '../../../repositories/category_repository.dart';
 import '../../../core/utils/quantity_utils.dart';
 
-/// Purchase entry screen, redesigned into three short steps
-/// (Details / Items / Totals) instead of one long scrolling form,
-/// with collapsible item rows and a sticky totals bar.
+/// Purchase entry screen with a single scrollable layout:
+/// Supplier/Invoice → Product Search → Items → Totals,
+/// with collapsible item rows and a sticky bottom bar.
 class PurchaseFormScreen extends ConsumerStatefulWidget {
   final Purchase? existingPurchase;
 
@@ -29,7 +31,6 @@ const List<String> _kStatuses = ['draft', 'completed', 'cancelled'];
 
 class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  int _step = 0; // 0 = Details, 1 = Items, 2 = Totals
 
   // Header
   late final TextEditingController _grnController;
@@ -322,11 +323,11 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
 
   Future<void> _save() async {
     if (_selectedSupplier == null && widget.existingPurchase == null) {
-      _goToStepWithError(0, 'Please select a supplier');
+      _showError('Please select a supplier');
       return;
     }
     if (_items.isEmpty) {
-      _goToStepWithError(1, 'Add at least one product');
+      _showError('Add at least one product');
       return;
     }
 
@@ -390,8 +391,7 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
     }
   }
 
-  void _goToStepWithError(int step, String message) {
-    setState(() => _step = step);
+  void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
@@ -408,60 +408,26 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
         key: _formKey,
         child: Column(
           children: [
-            _buildStepTabs(theme),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
-                child: switch (_step) {
-                  0 => _buildDetailsStep(),
-                  1 => _buildItemsStep(),
-                  _ => _buildTotalsStep(),
-                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildDetailsStep(),
+                    const SizedBox(height: 16),
+                    _buildProductSearch(),
+                    const SizedBox(height: 12),
+                    _buildItemsList(),
+                    const SizedBox(height: 16),
+                    _buildTotalsStep(),
+                  ],
+                ),
               ),
             ),
             _buildBottomBar(theme),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildStepTabs(ThemeData theme) {
-    const labels = ['Details', 'Items', 'Totals'];
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
-      ),
-      child: Row(
-        children: List.generate(labels.length, (i) {
-          final selected = _step == i;
-          return Expanded(
-            child: InkWell(
-              onTap: () => setState(() => _step = i),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: selected ? theme.colorScheme.primary : Colors.transparent,
-                      width: 2,
-                    ),
-                  ),
-                ),
-                child: Text(
-                  '${i + 1}  ${labels[i]}',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                    color: selected ? theme.colorScheme.primary : theme.hintColor,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
       ),
     );
   }
@@ -725,35 +691,348 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
 
   // --- Step 2: Items ---
 
-  Widget _buildItemsStep() {
+  Widget _buildItemsList() {
+    if (_items.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Center(
+            child: Column(
+              children: [
+                Icon(Icons.inventory_2_outlined, size: 40, color: Theme.of(context).hintColor),
+                const SizedBox(height: 8),
+                Text('No items yet — search above to add one', style: TextStyle(color: Theme.of(context).hintColor)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return _buildPurchaseItemsTable();
+  }
+
+  // Compact table view for purchase items (Phase 4A redesign)
+  static const _flexHash = 1;
+  static const _flexCode = 1;
+  static const _flexName = 3;
+  static const _flexQty = 2;
+  static const _flexUnit = 1;
+  static const _flexPrice = 2;
+  static const _flexTotal = 2;
+
+  Widget _buildPurchaseItemsTable() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Header row
+        Container(
+          color: Colors.grey.shade100,
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+          child: Row(
+            children: [
+              Expanded(flex: _flexHash, child: const Text('#', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54))),
+              Expanded(flex: _flexCode, child: const Text('CODE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54))),
+              Expanded(flex: _flexName, child: const Text('ITEM', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54))),
+              Expanded(flex: _flexQty, child: const Text('QTY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54), textAlign: TextAlign.center)),
+              Expanded(flex: _flexUnit, child: const Text('UNIT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54), textAlign: TextAlign.center)),
+              Expanded(flex: _flexPrice, child: const Text('PRICE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54), textAlign: TextAlign.right)),
+              Expanded(flex: _flexTotal, child: const Text('TOTAL ₹', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54), textAlign: TextAlign.right)),
+              const SizedBox(width: 30),
+            ],
+          ),
+        ),
+        const Divider(height: 1, thickness: 1),
+        // Item rows
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _items.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (context, index) {
+            final item = _items[index];
+            return _buildPurchaseItemRow(index, item);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPurchaseItemRow(int index, PurchaseItem item) {
+    final effectiveQty = item.isRepack ? item.packCount.toDouble() : item.quantity.toDouble();
+    final lineTotal = item.purchasePrice * effectiveQty;
+    final product = _itemProducts[item.id];
+    final baseUnit = product?.unit ?? 'unit';
+
+    return GestureDetector(
+      onTap: () => setState(() {
+        final currentExpanded = _expandedItems.contains(index);
+        if (currentExpanded) {
+          _expandedItems.remove(index);
+        } else {
+          _expandedItems.add(index);
+        }
+      }),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(flex: _flexHash, child: Text('${index + 1}', style: const TextStyle(fontSize: 12))),
+                Expanded(
+                  flex: _flexCode,
+                  child: Text(
+                    (item.barcode ?? '').isEmpty ? '-' : item.barcode ?? '-',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Expanded(
+                  flex: _flexName,
+                  child: Text(
+                    item.productName ?? item.productId,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Expanded(
+                  flex: _flexQty,
+                  child: _buildInlineQtyField(index, item),
+                ),
+                Expanded(
+                  flex: _flexUnit,
+                  child: Text(baseUnit, style: TextStyle(fontSize: 11, color: Colors.grey.shade600), textAlign: TextAlign.center),
+                ),
+                Expanded(
+                  flex: _flexPrice,
+                  child: _buildInlinePriceField(index, item),
+                ),
+                Expanded(
+                  flex: _flexTotal,
+                  child: Text('₹${lineTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.right),
+                ),
+                SizedBox(
+                  width: 30,
+                  child: IconButton(
+                    icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18),
+                    onPressed: () => _removeItem(index),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Expanded detail row for advanced fields
+          if (_expandedItems.contains(index))
+            Container(
+              color: Colors.grey.shade50,
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+              child: _buildItemDetailRow(index, item),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInlineQtyField(int index, PurchaseItem item) {
+    final key = ValueKey('qty_inline_${item.id}');
+    return Listener(
+      onPointerSignal: (event) {
+        // Mouse wheel scroll to adjust quantity
+        if (event is PointerScrollEvent) {
+          final delta = event.scrollDelta.dy;
+          if (delta < 0) {
+            _updateItem(index, item.copyWith(quantity: item.quantity + 1));
+          } else if (delta > 0 && item.quantity > 1) {
+            _updateItem(index, item.copyWith(quantity: item.quantity - 1));
+          }
+        }
+      },
+      child: SizedBox(
+        width: 60,
+        height: 28,
+        child: Focus(
+          onKeyEvent: (node, event) {
+            if (event is! KeyDownEvent) return KeyEventResult.ignored;
+            if (event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+              node.unfocus();
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: TextField(
+            key: key,
+            controller: TextEditingController(text: formatQty(item.quantity)),
+            textAlign: TextAlign.center,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            decoration: const InputDecoration(
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(vertical: 4),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (v) {
+              final qty = double.tryParse(v) ?? 1;
+              if (qty > 0) {
+                final recalculatedPrice =
+                    (item.dozAmt > 0 && qty > 0) ? item.dozAmt / qty : item.purchasePrice;
+                _updateItem(index, item.copyWith(quantity: qty, purchasePrice: recalculatedPrice));
+              }
+            },
+            onSubmitted: (_) => _recalculate(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlinePriceField(int index, PurchaseItem item) {
+    final key = ValueKey('price_inline_${item.id}');
+    return SizedBox(
+      width: 70,
+      height: 28,
+      child: TextField(
+        key: key,
+        controller: TextEditingController(text: item.purchasePrice.toStringAsFixed(2)),
+        textAlign: TextAlign.right,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        style: const TextStyle(fontSize: 12),
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (v) {
+          final price = double.tryParse(v) ?? 0;
+          _updateItem(index, item.copyWith(purchasePrice: price));
+        },
+        onSubmitted: (_) => _recalculate(),
+      ),
+    );
+  }
+
+  Widget _buildItemDetailRow(int index, PurchaseItem item) {
+    final product = _itemProducts[item.id];
+    final purchaseUnitEligible =
+        product != null && product.purchaseUnit != null && product.purchaseUnit!.isNotEmpty && product.unitsPerPurchaseUnit > 1;
+    final baseUnit = product?.unit ?? 'unit';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildProductSearch(),
-        const SizedBox(height: 12),
-        if (_items.isEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(Icons.inventory_2_outlined, size: 40, color: Theme.of(context).hintColor),
-                    const SizedBox(height: 8),
-                    Text('No items yet — search above to add one', style: TextStyle(color: Theme.of(context).hintColor)),
+        if (purchaseUnitEligible) ...[
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<bool>(
+                  key: ValueKey('buyunit_${item.id}'),
+                  initialValue: item.isPurchaseUnitEntry,
+                  decoration: const InputDecoration(labelText: 'Buying in', contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8)),
+                  items: [
+                    DropdownMenuItem(value: false, child: Text('$baseUnit (each)')),
+                    DropdownMenuItem(
+                      value: true,
+                      child: Text('${product.purchaseUnit} (${formatQty(product.unitsPerPurchaseUnit)} $baseUnit each)'),
+                    ),
                   ],
+                  onChanged: (val) => _updateItem(
+                    index,
+                    item.copyWith(
+                      isPurchaseUnitEntry: val ?? false,
+                      purchaseUnitFactor: product.unitsPerPurchaseUnit,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          )
-        else
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) => _buildItemCard(index),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: TextEditingController(text: item.freeQuantity.toString()),
+                  decoration: const InputDecoration(labelText: 'Free', contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8)),
+                  keyboardType: TextInputType.number,
+                  onChanged: (v) => _updateItem(index, item.copyWith(freeQuantity: int.tryParse(v) ?? 0)),
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
+        ],
+        if (item.last > 0) ...[
+          _lastPriceComparison(item),
+          const SizedBox(height: 8),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: TextEditingController(text: item.dozAmt == 0 ? '' : item.dozAmt.toString()),
+                decoration: const InputDecoration(
+                  labelText: 'Total Amount',
+                  helperText: 'Total invoice amt for this qty',
+                  contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                ),
+                keyboardType: TextInputType.number,
+                onChanged: (v) {
+                  final dozAmt = double.tryParse(v) ?? 0;
+                  final qty = item.quantity;
+                  final calculatedPrice = (dozAmt > 0 && qty > 0) ? dozAmt / qty : item.purchasePrice;
+                  _updateItem(index, item.copyWith(dozAmt: dozAmt, purchasePrice: calculatedPrice));
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: TextEditingController(text: item.mrp.toString()),
+                decoration: const InputDecoration(labelText: 'MRP', contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8)),
+                keyboardType: TextInputType.number,
+                onChanged: (v) => _updateItem(index, item.copyWith(mrp: double.tryParse(v) ?? 0)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: TextEditingController(text: item.salesPrice.toString()),
+                decoration: const InputDecoration(labelText: 'Sales Price', contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8)),
+                keyboardType: TextInputType.number,
+                onChanged: (v) => _updateItem(index, item.copyWith(salesPrice: double.tryParse(v) ?? 0)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: TextEditingController(text: item.taxPercent.toString()),
+                decoration: const InputDecoration(labelText: 'Tax %', contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8)),
+                keyboardType: TextInputType.number,
+                onChanged: (v) => _updateItem(index, item.copyWith(taxPercent: double.tryParse(v) ?? 0)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: TextEditingController(text: item.discount.toString()),
+                decoration: const InputDecoration(labelText: 'Discount', contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8)),
+                keyboardType: TextInputType.number,
+                onChanged: (v) => _updateItem(index, item.copyWith(discount: double.tryParse(v) ?? 0)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: TextEditingController(text: item.batchNo ?? ''),
+                decoration: const InputDecoration(labelText: 'Batch no', contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8)),
+                onChanged: (v) => _updateItem(index, item.copyWith(batchNo: v.isEmpty ? null : v)),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -943,360 +1222,48 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
   /// Mirrors `PurchaseRepository._stockQtyForItem` — purely for the UI
   /// preview hint shown while entering a line, so the cashier can see the
   /// conversion before saving. The actual stock write happens in the
-  /// repository against the persisted item fields; this never itself
-  /// writes anything.
-  double _stockQtyPreview(PurchaseItem item) {
-    if (item.isRepack) return item.packCount.toDouble();
-    final rawQty = item.quantity + item.freeQuantity;
-    final factor = item.isPurchaseUnitEntry ? item.purchaseUnitFactor : 1.0;
-    return rawQty * factor;
-  }
-
-  Widget _buildItemCard(int index) {
-    final item = _items[index];
-    final expanded = _expandedItems.contains(index);
-    final effectiveQty = item.isRepack ? item.packCount.toDouble() : item.quantity.toDouble();
-    final lineTotal = item.purchasePrice * effectiveQty;
-    final originalMrp = _originalMrp[item.id];
-    final mrpChanged = originalMrp != null && (item.mrp - originalMrp).abs() > 0.005;
-
-    // Purchase-unit (Box/Case) buying — only offered when the product has
-    // one configured. Distinct from `isRepack` above; see PurchaseItem's
-    // isPurchaseUnitEntry/purchaseUnitFactor doc comments.
-    final product = _itemProducts[item.id];
-    final purchaseUnitEligible =
-        product != null && product.purchaseUnit != null && product.purchaseUnit!.isNotEmpty && product.unitsPerPurchaseUnit > 1;
-    final baseUnitLabel = product?.unit ?? 'unit';
-    final qtyUnitLabel = (item.isPurchaseUnitEntry && product?.purchaseUnit != null) ? product!.purchaseUnit! : baseUnitLabel;
-    // What actually lands in stock for this line — shown as a hint so the
-    // cashier can see the conversion before saving, not just discover it
-    // afterward on the stock report.
-    final stockQtyPreview = _stockQtyPreview(item);
-
-    return Card(
-      child: Column(
+  Widget _lastPriceComparison(PurchaseItem item) {
+    final diff = item.purchasePrice - item.last;
+    final diffAbs = diff.abs();
+    final Color color;
+    final String sign;
+    if (diff > 0.005) {
+      color = Colors.red;
+      sign = '+';
+    } else if (diff < -0.005) {
+      color = Colors.green;
+      sign = '-';
+    } else {
+      color = Colors.grey;
+      sign = '';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
         children: [
-          InkWell(
-            onTap: () => setState(() {
-              expanded ? _expandedItems.remove(index) : _expandedItems.add(index);
-            }),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                item.productName ?? item.productId,
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (mrpChanged) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  'New MRP',
-                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        Text(
-                          item.isPurchaseUnitEntry
-                              ? '${formatQty(item.quantity)} $qtyUnitLabel × ₹${item.purchasePrice.toStringAsFixed(2)} '
-                                  '(= ${formatQty(stockQtyPreview)} $baseUnitLabel)'
-                              : '${formatQty(item.quantity)} $qtyUnitLabel × ₹${item.purchasePrice.toStringAsFixed(2)}',
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text('₹${lineTotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    onPressed: () => _removeItem(index),
-                  ),
-                  Icon(expanded ? Icons.expand_less : Icons.expand_more, color: Theme.of(context).hintColor),
-                ],
-              ),
-            ),
+          Icon(Icons.history, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            'Last: ₹${item.last.toStringAsFixed(2)}',
+            style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
           ),
-          if (expanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Column(
-                children: [
-                  const Divider(),
-                  if (purchaseUnitEligible) ...[
-                    DropdownButtonFormField<bool>(
-                      key: ValueKey('buyunit_${item.id}'),
-                      initialValue: item.isPurchaseUnitEntry,
-                      decoration: const InputDecoration(labelText: 'Buying in'),
-                      items: [
-                        DropdownMenuItem(value: false, child: Text('$baseUnitLabel (each)')),
-                        DropdownMenuItem(
-                          value: true,
-                          child: Text('${product.purchaseUnit} (${formatQty(product.unitsPerPurchaseUnit)} $baseUnitLabel each)'),
-                        ),
-                      ],
-                      onChanged: (val) => _updateItem(
-                        index,
-                        item.copyWith(
-                          isPurchaseUnitEntry: val ?? false,
-                          purchaseUnitFactor: product.unitsPerPurchaseUnit,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('qty_${item.id}'),
-                          initialValue: formatQty(item.quantity),
-                          decoration: InputDecoration(
-                            labelText: 'Qty ($qtyUnitLabel)',
-                            helperText: item.isPurchaseUnitEntry ? '= ${formatQty(stockQtyPreview)} $baseUnitLabel to stock' : null,
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          onChanged: (v) {
-                            final qty = double.tryParse(v) ?? 1;
-                            // If a total amount for this qty was entered, keep
-                            // the per-unit purchase price in sync as qty
-                            // changes, so the cashier never has to redo the
-                            // division by hand.
-                            final recalculatedPrice =
-                                (item.dozAmt > 0 && qty > 0) ? item.dozAmt / qty : item.purchasePrice;
-                            _updateItem(index, item.copyWith(quantity: qty, purchasePrice: recalculatedPrice));
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('free_${item.id}'),
-                          initialValue: item.freeQuantity.toString(),
-                          decoration: const InputDecoration(labelText: 'Free'),
-                          keyboardType: TextInputType.number,
-                          onChanged: (v) => _updateItem(index, item.copyWith(freeQuantity: int.tryParse(v) ?? 0)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('dozamt_${item.id}'),
-                          initialValue: item.dozAmt == 0 ? '' : item.dozAmt.toString(),
-                          decoration: const InputDecoration(
-                            labelText: 'Total Amount',
-                            helperText: 'Total invoice amt for this qty',
-                            helperMaxLines: 2,
-                          ),
-                          keyboardType: TextInputType.number,
-                          onChanged: (v) {
-                            final dozAmt = double.tryParse(v) ?? 0;
-                            // Auto-fill Purchase price from the total the
-                            // supplier billed for this box/dozen, instead of
-                            // making the cashier divide it out manually.
-                            final qty = item.quantity;
-                            final calculatedPrice = (dozAmt > 0 && qty > 0) ? dozAmt / qty : item.purchasePrice;
-                            _updateItem(index, item.copyWith(dozAmt: dozAmt, purchasePrice: calculatedPrice));
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('pp_${item.id}'),
-                          initialValue: item.purchasePrice.toString(),
-                          decoration: const InputDecoration(labelText: 'Purchase price'),
-                          keyboardType: TextInputType.number,
-                          onChanged: (v) => _updateItem(index, item.copyWith(purchasePrice: double.tryParse(v) ?? 0)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('mrp_${item.id}'),
-                          initialValue: item.mrp.toString(),
-                          decoration: const InputDecoration(labelText: 'MRP'),
-                          keyboardType: TextInputType.number,
-                          onChanged: (v) => _updateItem(index, item.copyWith(mrp: double.tryParse(v) ?? 0)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('sp_${item.id}'),
-                          initialValue: item.salesPrice.toString(),
-                          decoration: const InputDecoration(labelText: 'Sales price'),
-                          keyboardType: TextInputType.number,
-                          onChanged: (v) => _updateItem(index, item.copyWith(salesPrice: double.tryParse(v) ?? 0)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('tax_${item.id}'),
-                          initialValue: item.taxPercent.toString(),
-                          decoration: const InputDecoration(labelText: 'Tax %'),
-                          keyboardType: TextInputType.number,
-                          onChanged: (v) => _updateItem(index, item.copyWith(taxPercent: double.tryParse(v) ?? 0)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (mrpChanged)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, bottom: 4),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline, size: 14, color: Colors.orange),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Master MRP is ₹${originalMrp.toStringAsFixed(2)} — saving at ₹${item.mrp.toStringAsFixed(2)} '
-                              'creates a separate priced item, so the cashier is prompted to pick the right one at billing.',
-                              style: const TextStyle(fontSize: 11, color: Colors.orange),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('disc_${item.id}'),
-                          initialValue: item.discount.toString(),
-                          decoration: const InputDecoration(labelText: 'Discount'),
-                          keyboardType: TextInputType.number,
-                          onChanged: (v) => _updateItem(index, item.copyWith(discount: double.tryParse(v) ?? 0)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('batch_${item.id}'),
-                          initialValue: item.batchNo ?? '',
-                          decoration: const InputDecoration(labelText: 'Batch no'),
-                          onChanged: (v) => _updateItem(index, item.copyWith(batchNo: v.isEmpty ? null : v)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('exp_${item.id}'),
-                          initialValue: item.expiryDate != null
-                              ? DateTime.fromMillisecondsSinceEpoch(item.expiryDate! * 1000).toLocal().toString().split(' ')[0]
-                              : '',
-                          decoration: const InputDecoration(labelText: 'Expiry date'),
-                          onChanged: (v) {
-                            try {
-                              final date = DateTime.parse(v);
-                              _updateItem(index, item.copyWith(expiryDate: date.millisecondsSinceEpoch ~/ 1000));
-                            } catch (_) {}
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey('pack_date_${item.id}'),
-                          initialValue: item.packingDate != null
-                              ? DateTime.fromMillisecondsSinceEpoch(item.packingDate! * 1000).toLocal().toString().split(' ')[0]
-                              : '',
-                          decoration: const InputDecoration(labelText: 'Packing date'),
-                          onChanged: (v) {
-                            try {
-                              final date = DateTime.parse(v);
-                              _updateItem(index, item.copyWith(packingDate: date.millisecondsSinceEpoch ~/ 1000));
-                            } catch (_) {}
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          value: item.isRepack,
-                          onChanged: (val) => _updateItem(index, item.copyWith(isRepack: val ?? false)),
-                          title: const Text('Repack'),
-                          controlAffinity: ListTileControlAffinity.leading,
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (item.isRepack)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            key: ValueKey('bulkq_${item.id}'),
-                            initialValue: formatQty(item.bulkQuantity),
-                            decoration: const InputDecoration(labelText: 'Bulk qty'),
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            onChanged: (v) => _updateItem(index, item.copyWith(bulkQuantity: double.tryParse(v) ?? 0)),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextFormField(
-                            key: ValueKey('packsize_${item.id}'),
-                            initialValue: item.packSize.toString(),
-                            decoration: const InputDecoration(labelText: 'Pack size'),
-                            keyboardType: TextInputType.number,
-                            onChanged: (v) {
-                              final val = double.tryParse(v) ?? 0;
-                              final updated = item.copyWith(packSize: val);
-                              if (val > 0 && item.bulkQuantity > 0) {
-                                final count = (item.bulkQuantity / val).round();
-                                _updateItem(index, updated.copyWith(packCount: count, quantity: count.toDouble()));
-                              } else {
-                                _updateItem(index, updated);
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextFormField(
-                            key: ValueKey('packunit_${item.id}'),
-                            initialValue: item.packUnit ?? '',
-                            decoration: const InputDecoration(labelText: 'Pack unit'),
-                            onChanged: (v) => _updateItem(index, item.copyWith(packUnit: v.isEmpty ? null : v)),
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
+          const SizedBox(width: 12),
+          Text(
+            'Current: ₹${item.purchasePrice.toStringAsFixed(2)}',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          if (diffAbs > 0.005) ...[
+            const SizedBox(width: 12),
+            Text(
+              '$sign₹${diffAbs.toStringAsFixed(2)}',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
             ),
+          ],
         ],
       ),
     );

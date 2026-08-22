@@ -1,7 +1,7 @@
 class AppConstants {
   static const String appName = 'SuperMart POS Enterprise';
   static const String dbName = 'super_mart_pos.db';
-  static const int dbVersion = 34; // ✅ updated from 33 to 34 (Cash movements: single source of truth for shift-close expected cash)
+  static const int dbVersion = 35; // v35: manual cash management columns on cash_movements (counterparty, approver, reason)
 
   // Removed: sessionTimeoutSeconds (idle lock was never implemented),
   // bonusPointsThreshold and bonusPointValue (both superseded by the

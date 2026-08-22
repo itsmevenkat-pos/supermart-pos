@@ -13,13 +13,16 @@ class CustomerNotifier extends _$CustomerNotifier {
     return await _repo.getAll();
   }
 
-  Future<void> addCustomer(Customer customer) async {
-    await _repo.insert(customer);
+  /// [approvedByUserId] is passed straight through to the repository, which
+  /// owns the credit-limit rule — the screen supplies the approver it
+  /// authenticated, and the repository decides whether one was needed.
+  Future<void> addCustomer(Customer customer, {String? approvedByUserId}) async {
+    await _repo.insert(customer, approvedByUserId: approvedByUserId);
     ref.invalidateSelf();
   }
 
-  Future<void> updateCustomer(Customer customer) async {
-    await _repo.update(customer);
+  Future<void> updateCustomer(Customer customer, {String? approvedByUserId}) async {
+    await _repo.update(customer, approvedByUserId: approvedByUserId);
     ref.invalidateSelf();
   }
 

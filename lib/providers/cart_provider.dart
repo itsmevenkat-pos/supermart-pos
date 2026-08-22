@@ -184,6 +184,46 @@ class Cart extends _$Cart {
     state = [];
   }
 
+  /// Snapshot the full bill state for multi-bill workspace switching.
+  BillSnapshot takeSnapshot() {
+    return BillSnapshot(
+      items: _items.map((i) => CartItem(
+        productId: i.productId,
+        quantity: i.quantity,
+        product: i.product,
+        discountAmount: i.discountAmount,
+        promoDiscount: i.promoDiscount,
+        promoLabel: i.promoLabel,
+      )).toList(),
+      customer: _customer,
+      discount: _discount,
+      discountReason: _discountReason,
+      deliveryAddress: _deliveryAddress,
+      deliveryCharge: _deliveryCharge,
+      loyaltyPointsToRedeem: _loyaltyPointsToRedeem,
+      loyaltyRedemptionAmount: _loyaltyRedemptionAmount,
+      appliedCoupon: _appliedCoupon,
+      couponDiscount: _couponDiscount,
+    );
+  }
+
+  /// Restore a bill state from a snapshot (multi-bill workspace switching).
+  void restoreSnapshot(BillSnapshot snapshot) {
+    _items.clear();
+    _items.addAll(snapshot.items);
+    _customer = snapshot.customer;
+    _discount = snapshot.discount;
+    _discountReason = snapshot.discountReason;
+    _deliveryAddress = snapshot.deliveryAddress;
+    _deliveryCharge = snapshot.deliveryCharge;
+    _loyaltyPointsToRedeem = snapshot.loyaltyPointsToRedeem;
+    _loyaltyRedemptionAmount = snapshot.loyaltyRedemptionAmount;
+    _appliedCoupon = snapshot.appliedCoupon;
+    _couponDiscount = snapshot.couponDiscount;
+    _recomputePromotions();
+    state = [..._items];
+  }
+
   double get lineDiscountTotal => _items.fold(0, (sum, item) => sum + item.discountAmount);
   double get promoDiscountTotal => _promoResult.totalDiscount;
   List<AppliedPromotion> get appliedPromotions => _promoResult.applied;
@@ -219,4 +259,129 @@ class Cart extends _$Cart {
   double get couponDiscount => _couponDiscount;
   bool get isEmpty => _items.isEmpty;
   int get itemCount => _items.length;
+}
+
+class BillSnapshot {
+  final List<CartItem> items;
+  final Customer? customer;
+  final double discount;
+  final String? discountReason;
+  final String? deliveryAddress;
+  final double deliveryCharge;
+  final int loyaltyPointsToRedeem;
+  final double loyaltyRedemptionAmount;
+  final Coupon? appliedCoupon;
+  final double couponDiscount;
+
+  const BillSnapshot({
+    required this.items,
+    this.customer,
+    this.discount = 0,
+    this.discountReason,
+    this.deliveryAddress,
+    this.deliveryCharge = 0,
+    this.loyaltyPointsToRedeem = 0,
+    this.loyaltyRedemptionAmount = 0,
+    this.appliedCoupon,
+    this.couponDiscount = 0,
+  });
+
+  String get label {
+    if (customer != null) return customer!.name;
+    if (items.isEmpty) return 'Empty';
+    return '${items.length} item${items.length == 1 ? '' : 's'}';
+  }
+
+  bool get isEmpty => items.isEmpty && customer == null;
+}
+
+enum BillStatus { active, paymentPending }
+
+class BillTab {
+  final int id;
+  BillSnapshot snapshot;
+  BillStatus status;
+
+  BillTab({required this.id, required this.snapshot, this.status = BillStatus.active});
+}
+
+class BillWorkspaceState {
+  final List<BillTab> tabs;
+  final int activeTabIndex;
+
+  const BillWorkspaceState({this.tabs = const [], this.activeTabIndex = 0});
+
+  BillWorkspaceState copyWith({List<BillTab>? tabs, int? activeTabIndex}) {
+    return BillWorkspaceState(
+      tabs: tabs ?? this.tabs,
+      activeTabIndex: activeTabIndex ?? this.activeTabIndex,
+    );
+  }
+
+  BillTab? get activeTab => tabs.isNotEmpty ? tabs[activeTabIndex] : null;
+}
+
+@riverpod
+class BillWorkspace extends _$BillWorkspace {
+  int _nextId = 1;
+
+  @override
+  BillWorkspaceState build() {
+    final tab = BillTab(id: _nextId++, snapshot: const BillSnapshot(items: []));
+    return BillWorkspaceState(tabs: [tab], activeTabIndex: 0);
+  }
+
+  void addBill() {
+    final cart = ref.read(cartProvider.notifier);
+    final tabs = [...state.tabs];
+    tabs[state.activeTabIndex].snapshot = cart.takeSnapshot();
+    final newTab = BillTab(id: _nextId++, snapshot: const BillSnapshot(items: []));
+    tabs.add(newTab);
+    state = state.copyWith(tabs: tabs, activeTabIndex: tabs.length - 1);
+    cart.clearCart();
+  }
+
+  void switchTo(int index) {
+    if (index == state.activeTabIndex || index < 0 || index >= state.tabs.length) return;
+    final cart = ref.read(cartProvider.notifier);
+    final tabs = [...state.tabs];
+    tabs[state.activeTabIndex].snapshot = cart.takeSnapshot();
+    state = state.copyWith(tabs: tabs, activeTabIndex: index);
+    cart.restoreSnapshot(tabs[index].snapshot);
+  }
+
+  void removeBill(int index) {
+    if (state.tabs.length <= 1) return;
+    final cart = ref.read(cartProvider.notifier);
+    final tabs = [...state.tabs];
+    tabs.removeAt(index);
+    int newActive = state.activeTabIndex;
+    if (index == state.activeTabIndex) {
+      newActive = newActive.clamp(0, tabs.length - 1);
+      state = state.copyWith(tabs: tabs, activeTabIndex: newActive);
+      cart.restoreSnapshot(tabs[newActive].snapshot);
+    } else {
+      if (index < state.activeTabIndex) newActive--;
+      state = state.copyWith(tabs: tabs, activeTabIndex: newActive);
+    }
+  }
+
+  void markPaymentPending() {
+    final tabs = [...state.tabs];
+    tabs[state.activeTabIndex].status = BillStatus.paymentPending;
+    state = state.copyWith(tabs: tabs);
+  }
+
+  void markActive() {
+    final tabs = [...state.tabs];
+    tabs[state.activeTabIndex].status = BillStatus.active;
+    state = state.copyWith(tabs: tabs);
+  }
+
+  void syncActiveSnapshot() {
+    final cart = ref.read(cartProvider.notifier);
+    final tabs = [...state.tabs];
+    tabs[state.activeTabIndex].snapshot = cart.takeSnapshot();
+    state = state.copyWith(tabs: tabs);
+  }
 }

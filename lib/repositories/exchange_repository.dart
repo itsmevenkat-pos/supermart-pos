@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/database/database_helper.dart';
 import '../models/customer_ledger_model.dart';
@@ -6,6 +8,7 @@ import '../models/sale_item_model.dart';
 import '../models/sale_model.dart';
 import '../models/sales_return_item_model.dart';
 import '../models/sales_return_model.dart';
+import '../services/approval_service.dart';
 import 'sale_repository.dart';
 import 'sales_return_repository.dart';
 
@@ -13,9 +16,14 @@ import 'sales_return_repository.dart';
 /// (replacement items) as ONE atomic transaction, then links the two with
 /// an [Exchange] row and settles any price difference.
 class ExchangeRepository {
-  ExchangeRepository({DatabaseHelper? dbHelper}) : _dbHelper = dbHelper ?? DatabaseHelper.instance;
+  ExchangeRepository({
+    DatabaseHelper? dbHelper,
+    ApprovalService? approvals,
+  })  : _dbHelper = dbHelper ?? DatabaseHelper.instance,
+        _approvals = approvals ?? ApprovalService();
 
   final DatabaseHelper _dbHelper;
+  final ApprovalService _approvals;
 
   Future<Exchange> processExchange({
     required SalesReturn returnHeader,
@@ -31,6 +39,12 @@ class ExchangeRepository {
     late Exchange savedExchange;
 
     await db.transaction((txn) async {
+      await _approvals.authoriseAlways(
+        actionLabel: 'Process exchange',
+        approvedByUserId: approvedByUserId,
+        executor: txn,
+      );
+
       // SalesReturnRepository.insertReturn independently adjusts the
       // customer's outstanding_balance when refundMethod == 'credit_adjust'
       // — but this repository already applies ONE consolidated adjustment
@@ -62,8 +76,19 @@ class ExchangeRepository {
         txn: txn,
       );
 
+      // The same rewrite, applied to the other leg. A credit-adjusted exchange
+      // settles nothing at the counter, so the replacement sale must post its
+      // asset side to Accounts Receivable, not to Cash. Marking the settlement
+      // method is how that is expressed — `SaleRepository` still reads no cash
+      // out of it (the cash book only looks for a 'cash' key) and still leaves
+      // `creditUsed`/`partialPaymentAmount` untouched, so the consolidated
+      // customer-balance adjustment below stays the only one applied.
+      final newSaleForInsert = settlementMethod == 'credit_adjust' && newSale.netAmount > 0
+          ? newSale.copyWith(paymentMethods: {'exchange_settled': newSale.netAmount})
+          : newSale;
+
       final savedNewSale = await SaleRepository().insertSaleWithItems(
-        sale: newSale,
+        sale: newSaleForInsert,
         items: newSaleItems,
         storeId: storeId,
         customerId: returnHeader.customerId,
@@ -123,6 +148,17 @@ class ExchangeRepository {
         actionType: 'EXCHANGE_PROCESSED',
         tableName: 'exchanges',
         recordId: exchange.id,
+        newValue: jsonEncode({
+          'exchangeId': exchange.id,
+          'saleId': returnHeader.saleId,
+          'returnAmount': returnHeader.refundAmount,
+          'replacementAmount': savedNewSale.netAmount,
+          'priceDifference': exchange.priceDifference,
+          'settlementMethod': exchange.settlementMethod,
+          'approvedByUserId': approvedByUserId,
+          'returnItemCount': returnItems.length,
+          'replacementItemCount': newSaleItems.length,
+        }),
         executor: txn,
       );
 

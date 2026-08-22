@@ -344,10 +344,10 @@ class _MoreReportsTab extends StatelessWidget {
         // sales/purchase tables like the reports above — these three are
         // double-entry statements and pick their own financial year, so they
         // don't take the shared from/to date filter.
-        _category(context, 'Accounts (General Ledger)', [
-          _reportTile(context, 'Trial Balance', () => const TrialBalanceScreen()),
-          _reportTile(context, 'Profit & Loss', () => const PLStatementScreen()),
-          _reportTile(context, 'Balance Sheet', () => const BalanceSheetScreen()),
+        _category(context, 'Accounting Statements (General Ledger)', [
+          _reportTile(context, 'Trial Balance (GL)', () => const TrialBalanceScreen()),
+          _reportTile(context, 'Profit & Loss (GL)', () => const PLStatementScreen()),
+          _reportTile(context, 'Balance Sheet (GL)', () => const BalanceSheetScreen()),
         ]),
       ],
     );
@@ -1115,9 +1115,9 @@ class _ProfitLossTab extends ConsumerWidget {
           ),
           _reportTile(
             context,
-            'Trial Balance Report',
+            'Trial Balance (Summary)',
             () => GenericReportScreen(
-              title: 'Trial Balance Report',
+              title: 'Trial Balance (Summary)',
               fetch: (from, to) => _advancedReportService.getTrialBalance(from: from, to: to),
               columns: [
                 const ReportColumn(key: 'account', label: 'Account'),
@@ -1129,9 +1129,9 @@ class _ProfitLossTab extends ConsumerWidget {
           ),
           _reportTile(
             context,
-            'Balance Sheet',
+            'Balance Sheet (Summary)',
             () => GenericReportScreen(
-              title: 'Balance Sheet',
+              title: 'Balance Sheet (Summary)',
               fetch: (from, to) => _advancedReportService.getBalanceSheet(from: from, to: to),
               columns: [
                 const ReportColumn(key: 'category', label: 'Category'),

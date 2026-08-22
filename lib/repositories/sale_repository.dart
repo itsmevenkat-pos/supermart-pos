@@ -370,6 +370,10 @@ class SaleRepository {
         saleDate: saleDate,
         netAmount: savedSale.netAmount,
         receivableAmount: receivable,
+        // So the settled portion lands in the account that actually holds it:
+        // Cash for notes, Bank for UPI/card. Without this the GL books every
+        // non-credit rupee to Cash and stops agreeing with the cash book.
+        paymentMethods: savedSale.paymentMethods,
         description: 'Sale ${savedSale.invoiceDisplayNo ?? savedSale.invoiceNo}',
         createdBy: savedSale.userId,
         executor: txn,

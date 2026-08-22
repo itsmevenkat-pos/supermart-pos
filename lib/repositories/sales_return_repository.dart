@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart';
 import '../core/database/database_helper.dart';
@@ -7,6 +9,7 @@ import '../models/customer_ledger_model.dart';
 import '../models/stock_ledger_model.dart';
 import 'cash_movement_repository.dart';
 import 'stock_group_repository.dart';
+import '../services/approval_service.dart';
 import '../services/gl_service.dart';
 
 class SalesReturnRepository {
@@ -15,15 +18,18 @@ class SalesReturnRepository {
     StockGroupRepository? stockGroupRepo,
     GLService? glService,
     CashMovementRepository? cashMovements,
+    ApprovalService? approvals,
   })  : _dbHelper = dbHelper ?? DatabaseHelper.instance,
         _stockGroupRepo = stockGroupRepo ?? StockGroupRepository(),
         _glService = glService ?? GLService(),
-        _cashMovements = cashMovements ?? CashMovementRepository();
+        _cashMovements = cashMovements ?? CashMovementRepository(),
+        _approvals = approvals ?? ApprovalService();
 
   final DatabaseHelper _dbHelper;
   final StockGroupRepository _stockGroupRepo;
   final GLService _glService;
   final CashMovementRepository _cashMovements;
+  final ApprovalService _approvals;
 
   /// Inserts a return header + its lines in one transaction. Never mutates
   /// the original `sales`/`sale_items` rows — same compensating-row
@@ -63,6 +69,21 @@ class SalesReturnRepository {
     SalesReturn header,
     List<SalesReturnItem> items,
   ) async {
+    if (header.isUntied) {
+      await _approvals.authoriseAlways(
+        actionLabel: 'Return with no originating sale',
+        approvedByUserId: header.approvedByUserId,
+        executor: txn,
+      );
+    } else {
+      await _approvals.authorise(
+        amount: header.refundAmount,
+        actionLabel: 'Sales return',
+        approvedByUserId: header.approvedByUserId,
+        executor: txn,
+      );
+    }
+
     final saved = header;
     await txn.insert('sales_returns', saved.toJson());
 
@@ -151,7 +172,13 @@ class SalesReturnRepository {
       saleId: saved.saleId,
       returnDate: returnDate,
       refundAmount: saved.refundAmount,
-      refundedAgainstCredit: saved.customerId != null && saved.refundMethod == 'credit_adjust',
+      // `exchange_settled` counts here as well as `credit_adjust`: it is the
+      // method ExchangeRepository rewrites a credit-adjusted exchange's return
+      // leg to, and nothing changes hands on it either — the legs net against
+      // the customer's account. Treating it as a cash refund (which is what
+      // happened before) credited the drawer for money that never moved.
+      refundedAgainstCredit: saved.customerId != null && GLService.isReceivableMethod(saved.refundMethod),
+      refundMethod: saved.refundMethod,
       createdBy: saved.userId,
       executor: txn,
     );
@@ -171,6 +198,23 @@ class SalesReturnRepository {
         executor: txn,
       );
     }
+
+    await _dbHelper.logAudit(
+      userId: saved.userId,
+      actionType: 'SALES_RETURN_PROCESSED',
+      tableName: 'sales_returns',
+      recordId: saved.id,
+      newValue: jsonEncode({
+        'returnId': saved.id,
+        'saleId': saved.saleId,
+        'refundMethod': saved.refundMethod,
+        'refundAmount': saved.refundAmount,
+        'isUntied': saved.isUntied,
+        'approvedByUserId': saved.approvedByUserId,
+        'itemCount': items.length,
+      }),
+      executor: txn,
+    );
 
     await _dbHelper.queueSync('sales_returns', saved.id, 'INSERT', saved.toJson(), executor: txn);
 

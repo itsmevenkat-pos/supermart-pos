@@ -71,6 +71,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
     final previousLimit = widget.customer?.creditLimit ?? 0;
     final requestedLimit = double.tryParse(_creditLimitController.text) ?? 0;
     var effectiveLimit = requestedLimit;
+    String? approvedByUserId;
     if (requestedLimit > previousLimit) {
       final approver = await requireApprovalWithApprover(
         context,
@@ -78,6 +79,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
         actionLabel: 'Credit limit for ${_nameController.text.trim()} '
             '→ ₹${requestedLimit.toStringAsFixed(2)}',
       );
+      approvedByUserId = approver?.id;
       if (approver == null) {
         // Refused or cancelled: keep the old limit rather than abandoning the
         // rest of the edit, so a cashier's legitimate changes aren't lost.
@@ -111,11 +113,15 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
       updatedAt: widget.customer?.updatedAt,
     );
 
+    // The approver goes with the save. The repository, not this screen, is
+    // what decides whether one was required — this only supplies the one it
+    // authenticated, so a refused approval simply arrives as null and the
+    // unchanged limit above passes the repository's check anyway.
     final notifier = ref.read(customerNotifierProvider.notifier);
     if (widget.customer == null) {
-      await notifier.addCustomer(customer);
+      await notifier.addCustomer(customer, approvedByUserId: approvedByUserId);
     } else {
-      await notifier.updateCustomer(customer);
+      await notifier.updateCustomer(customer, approvedByUserId: approvedByUserId);
     }
 
     if (widget.onSaved != null) {

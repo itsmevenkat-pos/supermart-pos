@@ -52,6 +52,7 @@ import '../../features/returns/screens/return_form_screen.dart';
 import '../../features/sales_summary/screens/sales_summary_screen.dart';
 import '../../features/quotation/screens/quotation_list_screen.dart';
 import '../../features/quotation/screens/quotation_form_screen.dart';
+import '../../features/cash_management/screens/cash_management_screen.dart';
 import '../../features/holds/screens/hold_bills_screen.dart'; // ✅ Added Hold Bills route
 import '../../features/barcode/screens/barcode_generator_screen.dart';
 import '../../features/utilities/screens/export_items_screen.dart';
@@ -144,6 +145,7 @@ final Map<String, UserRole> _routeMinRole = {
   '/utilities/verify-data': UserRole.manager,
   '/utilities/close-financial-year': UserRole.admin,
   '/utilities/festival-calendar': UserRole.manager,
+  '/cash-management': UserRole.manager,
 };
 
 /// The only routes an accountant-role user may reach — a narrow, read/
@@ -200,6 +202,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Logged in but must change password: force that screen first.
       if (user.mustChangePassword && !changingPassword) {
         return '/change-password';
+      }
+
+      // Already on /change-password — allow it regardless of role so the
+      // accountant allowlist check below cannot bounce the user back to
+      // /dashboard and create a redirect loop.
+      if (changingPassword) {
+        return null;
       }
 
       // Already logged in: don't allow sitting on the login screen.
@@ -511,6 +520,10 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(
       path: '/utilities/close-financial-year',
       builder: (context, state) => const CloseFinancialYearScreen(),
+    ),
+    GoRoute(
+      path: '/cash-management',
+      builder: (context, state) => const CashManagementScreen(),
     ),
     // ----------------------------
   ],

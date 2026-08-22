@@ -125,7 +125,13 @@ class Sale extends Equatable {
     );
   }
 
-  Sale copyWith({String? status, int? synced, int? invoiceNo, String? invoiceDisplayNo}) {
+  Sale copyWith({
+    String? status,
+    int? synced,
+    int? invoiceNo,
+    String? invoiceDisplayNo,
+    Map<String, double>? paymentMethods,
+  }) {
     return Sale(
       id: id,
       storeId: storeId,
@@ -141,7 +147,7 @@ class Sale extends Equatable {
       discountReason: discountReason,
       roundOff: roundOff,
       netAmount: netAmount,
-      paymentMethods: paymentMethods,
+      paymentMethods: paymentMethods ?? this.paymentMethods,
       partialPaymentAmount: partialPaymentAmount,
       creditUsed: creditUsed,
       deliveryAddress: deliveryAddress,

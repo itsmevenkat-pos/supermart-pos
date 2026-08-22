@@ -6,7 +6,7 @@ import '../../../models/customer_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/customer_provider.dart';
 import '../../../repositories/customer_repository.dart';
-import '../../../repositories/store_repository.dart';
+import '../../../services/approval_service.dart';
 import '../../../services/counter_service.dart';
 
 /// Lets a cashier/manager record a payment against a customer's khata/credit
@@ -71,7 +71,11 @@ class _ReceivePaymentScreenState extends ConsumerState<ReceivePaymentScreen> {
     // same configurable threshold, rather than being open to anyone who can
     // reach the screen. Without this a cashier could clear a customer's khata
     // and pocket the cash, with nothing to reconcile against.
-    final threshold = await StoreRepository().getReturnThreshold();
+    // The same limit the repository will enforce, read from the same place —
+    // this decides whether to *show* the approval dialog, not whether the
+    // payment is allowed. `receivePayment` re-checks and refuses regardless,
+    // so a caller that skips this screen is bound by the rule too.
+    final threshold = await ApprovalService().cashierDiscretionLimit();
     String? approvedByUserId;
     if (amount > threshold) {
       if (!mounted) return;

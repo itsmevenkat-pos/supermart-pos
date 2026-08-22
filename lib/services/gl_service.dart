@@ -337,6 +337,30 @@ class GLService {
   static const String saleReferenceType = 'Sale';
   static const String purchaseReferenceType = 'Purchase';
 
+  /// Payment-method keys that settle nothing at the counter — the amount stays
+  /// owing on the customer's account instead of arriving as money.
+  ///
+  /// `exchange_settled` is in here because [ExchangeRepository] rewrites a
+  /// credit-adjusted exchange's legs to that method: nothing changes hands, the
+  /// two legs simply net against what the customer owes.
+  static const Set<String> receivableMethods = {'credit', 'credit_adjust', 'exchange_settled'};
+
+  static bool isReceivableMethod(String method) => receivableMethods.contains(method);
+
+  /// The chart-of-accounts code that holds money taken by [method].
+  ///
+  /// Cash is the drawer (`1000`); everything else — UPI, card, a named
+  /// gateway — is money that reached the bank (`1010`). That is the same
+  /// treatment [postGatewayPaymentEntries] already applied to gateway
+  /// payments, now applied consistently rather than only on that one path.
+  ///
+  /// Before this existed the GL booked *everything* not receivable to Cash,
+  /// so GL Cash was neither the drawer nor the bank: it was overstated by
+  /// every UPI/card sale and understated by every UPI/card refund, and could
+  /// not be reconciled against the cash movement ledger at all.
+  static String settlementAccountCodeFor(String method) =>
+      method == 'cash' ? cashAccountCode : bankAccountCode;
+
   /// The ledger side of a completed sale: debit what the shop received
   /// (cash now, a receivable for whatever the customer still owes), credit
   /// Sales Revenue for the full amount of the bill.
@@ -355,11 +379,17 @@ class GLService {
   /// is a deliberate Phase 1 simplification, not an oversight — splitting GST
   /// out means adding a tax account and reworking the sale split, which is
   /// its own change.
+  /// [paymentMethods] is the sale's own payment split. Passing it is what lets
+  /// the settled portion land in the account that actually holds it — Cash for
+  /// notes, Bank for UPI/card (see [settlementAccountCodeFor]). Omitting it
+  /// keeps the old behaviour of treating the whole settled portion as cash,
+  /// which is correct only for an all-cash bill.
   Future<List<GLEntry>> postSaleEntries({
     required String saleId,
     required DateTime saleDate,
     required double netAmount,
     double receivableAmount = 0,
+    Map<String, double>? paymentMethods,
     String? description,
     String? createdBy,
     DatabaseExecutor? executor,
@@ -367,10 +397,34 @@ class GLService {
     if (netAmount == 0) return const [];
 
     return _run(executor, (db) async {
-      final receivable = receivableAmount.clamp(0, netAmount).toDouble();
-      final cash = netAmount - receivable;
+      // Legs that settle nothing describe the same money [receivableAmount]
+      // already describes — the billing screen records a credit leg in *both*
+      // places — so take the larger of the two rather than their sum, which
+      // would double the receivable on every ordinary credit sale.
+      var methodReceivable = 0.0;
+      var nonCashSettled = 0.0;
+      if (paymentMethods != null) {
+        for (final leg in paymentMethods.entries) {
+          if (isReceivableMethod(leg.key)) {
+            methodReceivable += leg.value;
+          } else if (leg.key != 'cash') {
+            nonCashSettled += leg.value;
+          }
+        }
+      }
+      final declaredReceivable = receivableAmount.clamp(0, netAmount).toDouble();
+      final receivable =
+          (declaredReceivable > methodReceivable ? declaredReceivable : methodReceivable).clamp(0, netAmount).toDouble();
+
+      // Clamped into what is actually left to settle, so a caller passing an
+      // inconsistent pair still produces a balanced entry rather than one that
+      // would block the sale.
+      final settled = netAmount - receivable;
+      final bank = nonCashSettled.clamp(0, settled).toDouble();
+      final cash = settled - bank;
 
       final cashAccount = await requireAccountByCode(cashAccountCode, executor: db);
+      final bankAccount = await requireAccountByCode(bankAccountCode, executor: db);
       final receivableAccount = await requireAccountByCode(receivableAccountCode, executor: db);
       final revenueAccount = await requireAccountByCode(salesRevenueAccountCode, executor: db);
 
@@ -381,6 +435,7 @@ class GLService {
         referenceId: saleId,
         accounts: {
           cashAccount.id: cash,
+          bankAccount.id: bank,
           receivableAccount.id: receivable,
           revenueAccount.id: -netAmount,
         },
@@ -446,6 +501,7 @@ class GLService {
     required DateTime returnDate,
     required double refundAmount,
     required bool refundedAgainstCredit,
+    String refundMethod = 'cash',
     String? createdBy,
     DatabaseExecutor? executor,
   }) async {
@@ -453,8 +509,12 @@ class GLService {
 
     return _run(executor, (db) async {
       final revenueAccount = await requireAccountByCode(salesRevenueAccountCode, executor: db);
+      // Credit-adjusted refunds reduce what the customer owes; everything else
+      // gives money back, out of whichever account holds it — the drawer for a
+      // cash refund, the bank for a UPI or card one. Defaulting [refundMethod]
+      // to cash keeps the old behaviour for any caller that does not say.
       final refundAccount = await requireAccountByCode(
-        refundedAgainstCredit ? receivableAccountCode : cashAccountCode,
+        refundedAgainstCredit ? receivableAccountCode : settlementAccountCodeFor(refundMethod),
         executor: db,
       );
 
@@ -475,6 +535,77 @@ class GLService {
 
   static const String bankAccountCode = '1010';
   static const String gatewayPaymentReferenceType = 'GatewayPayment';
+  static const String customerPaymentReferenceType = 'CustomerPayment';
+
+  /// The ledger side of money collected against a customer's khata: debit
+  /// whichever account now holds it, credit Accounts Receivable.
+  ///
+  /// **This posts no revenue.** The credit sale that created the debt already
+  /// credited Sales Revenue; a collection is the shop being paid for something
+  /// it has already recorded as earned. Posting revenue again would double the
+  /// takings — the same reasoning as [postGatewayPaymentEntries].
+  ///
+  /// [methodAmounts] is a method → amount map, so one receipt settled partly
+  /// in notes and partly by UPI produces one balanced entry with two debits
+  /// rather than two unrelated receipts.
+  ///
+  /// **Advances are credited to Accounts Receivable too**, deliberately. When
+  /// a customer pays more than they owe, AR goes net-negative rather than the
+  /// excess being reclassified to a liability account. That is a recorded
+  /// accounting decision (AD-3), taken because it makes
+  /// `SUM(customers.outstanding_balance)` equal the GL receivable balance for
+  /// every transaction type in the app, including the awkward case of a credit
+  /// sale cancelled after it was partly collected. The cost is presentational:
+  /// the Balance Sheet's receivable is net of customer advances.
+  Future<List<GLEntry>> postCustomerPaymentEntries({
+    required String paymentId,
+    required DateTime paymentDate,
+    required Map<String, double> methodAmounts,
+    String? customerId,
+    String? description,
+    String? createdBy,
+    DatabaseExecutor? executor,
+  }) async {
+    final total = methodAmounts.values.fold<double>(0, (sum, v) => sum + v);
+    if (total == 0) return const [];
+    if (total < 0) {
+      throw UnbalancedEntry(
+        'A customer payment cannot be negative (got ${total.toStringAsFixed(2)}). '
+        'Use reverseByReference to undo a receipt.',
+      );
+    }
+
+    return _run(executor, (db) async {
+      // Several methods can map to the same account (UPI and card both settle
+      // to Bank), so accumulate per account rather than per method — a
+      // compound entry takes one line per account.
+      final lines = <String, double>{};
+      for (final leg in methodAmounts.entries) {
+        if (leg.value == 0) continue;
+        final account = await requireAccountByCode(
+          settlementAccountCodeFor(leg.key),
+          executor: db,
+        );
+        lines[account.id] = (lines[account.id] ?? 0) + leg.value;
+      }
+
+      final receivableAccount = await requireAccountByCode(receivableAccountCode, executor: db);
+      lines[receivableAccount.id] = (lines[receivableAccount.id] ?? 0) - total;
+
+      return postCompoundEntry(
+        entryDate: paymentDate,
+        description: description ??
+            (customerId == null
+                ? 'Customer payment $paymentId'
+                : 'Customer payment $paymentId from $customerId'),
+        referenceType: customerPaymentReferenceType,
+        referenceId: paymentId,
+        accounts: lines,
+        createdBy: createdBy,
+        executor: db,
+      );
+    });
+  }
 
   /// The ledger side of a payment collected through a payment gateway.
   ///

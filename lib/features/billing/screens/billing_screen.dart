@@ -209,32 +209,70 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       return;
     }
 
-    if (!allowsNegative && wouldBe > product.stockQuantity) {
-      _confirmAddDespiteLowStock(product, currentQtyInCart, quantity: quantity);
-      return;
+    if (wouldBe > product.stockQuantity) {
+      if (!allowsNegative) {
+        _confirmAddDespiteLowStock(product, currentQtyInCart, quantity: quantity, allowNegative: false);
+        return;
+      }
+      if (product.stockQuantity <= 0) {
+        _confirmAddDespiteLowStock(product, currentQtyInCart, quantity: quantity, allowNegative: true);
+        return;
+      }
     }
 
     _addProductToCart(product, quantity: quantity);
   }
 
-  Future<void> _confirmAddDespiteLowStock(Product product, double currentQtyInCart, {double quantity = 1}) async {
+  Future<void> _confirmAddDespiteLowStock(
+    Product product,
+    double currentQtyInCart, {
+    double quantity = 1,
+    required bool allowNegative,
+  }) async {
     final available = product.stockQuantity - currentQtyInCart;
+    final isOutOfStock = available <= 0;
+    final canAdd = allowNegative || !isOutOfStock;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Low Stock'),
-        content: Text(
-          available <= 0
-              ? '${product.displayName ?? product.name} is out of stock (0 available). Add anyway?'
-              : 'Only ${formatQty(available)} of ${product.displayName ?? product.name} left in stock. Add anyway?',
+        title: Row(
+          children: [
+            Icon(
+              isOutOfStock ? Icons.remove_shopping_cart : Icons.warning_amber,
+              color: isOutOfStock ? Colors.red : Colors.orange,
+            ),
+            const SizedBox(width: 8),
+            Text(isOutOfStock ? 'Out of Stock' : 'Low Stock'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              product.displayName ?? product.name,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            if (isOutOfStock && !allowNegative)
+              const Text('This product cannot be added because available stock is 0.')
+            else if (isOutOfStock && allowNegative)
+              const Text('Current stock: 0')
+            else
+              Text('Only ${formatQty(available)} left in stock.'),
+          ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Add Anyway'),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(canAdd ? 'Cancel' : 'OK'),
           ),
+          if (canAdd)
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Add Anyway'),
+            ),
         ],
       ),
     );
@@ -946,6 +984,23 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             flex: 6,
             child: Column(
               children: [
+                _BillTabBar(
+                  onNewBill: () {
+                    _barcodeController.clear();
+                    setState(() {
+                      _searchResults = [];
+                      _highlightedIndex = -1;
+                      _selectedSalesmanId = null;
+                    });
+                  },
+                  onSwitch: () {
+                    _barcodeController.clear();
+                    setState(() {
+                      _searchResults = [];
+                      _highlightedIndex = -1;
+                    });
+                  },
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8.0),
                   child: Focus(
@@ -1814,6 +1869,167 @@ class _LiveClockState extends State<_LiveClock> {
         const SizedBox(width: 4),
         Text(text, style: const TextStyle(fontSize: 13)),
       ],
+    );
+  }
+}
+
+class _BillTabBar extends ConsumerWidget {
+  final VoidCallback onNewBill;
+  final VoidCallback onSwitch;
+
+  const _BillTabBar({required this.onNewBill, required this.onSwitch});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final workspace = ref.watch(billWorkspaceProvider);
+    if (workspace.tabs.length <= 1) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+        child: Row(
+          children: [
+            const Spacer(),
+            TextButton.icon(
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('New Bill'),
+              onPressed: () {
+                ref.read(billWorkspaceProvider.notifier).addBill();
+                onNewBill();
+              },
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      height: 40,
+      margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: workspace.tabs.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 4),
+              itemBuilder: (context, index) {
+                final tab = workspace.tabs[index];
+                final isActive = index == workspace.activeTabIndex;
+                final isPending = tab.status == BillStatus.paymentPending;
+                return _BillChip(
+                  label: 'Bill #${tab.id}',
+                  subtitle: tab.snapshot.label,
+                  isActive: isActive,
+                  isPending: isPending,
+                  onTap: () {
+                    ref.read(billWorkspaceProvider.notifier).switchTo(index);
+                    onSwitch();
+                  },
+                  onClose: workspace.tabs.length > 1
+                      ? () {
+                          ref.read(billWorkspaceProvider.notifier).removeBill(index);
+                          onSwitch();
+                        }
+                      : null,
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.add, size: 18),
+            tooltip: 'New Bill',
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              ref.read(billWorkspaceProvider.notifier).addBill();
+              onNewBill();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BillChip extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final bool isActive;
+  final bool isPending;
+  final VoidCallback onTap;
+  final VoidCallback? onClose;
+
+  const _BillChip({
+    required this.label,
+    required this.subtitle,
+    required this.isActive,
+    required this.isPending,
+    required this.onTap,
+    this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: isActive
+          ? theme.primaryColor.withValues(alpha: 0.15)
+          : isPending
+              ? Colors.orange.withValues(alpha: 0.1)
+              : Colors.grey.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: isActive
+                  ? theme.primaryColor
+                  : isPending
+                      ? Colors.orange
+                      : Colors.grey.shade300,
+              width: isActive ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isPending) ...[
+                const Icon(Icons.hourglass_bottom, size: 12, color: Colors.orange),
+                const SizedBox(width: 4),
+              ],
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                      color: isActive ? theme.primaryColor : null,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 9, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+              if (onClose != null) ...[
+                const SizedBox(width: 4),
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: onClose,
+                  child: const Icon(Icons.close, size: 14, color: Colors.grey),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

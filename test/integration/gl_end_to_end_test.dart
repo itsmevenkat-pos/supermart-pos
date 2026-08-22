@@ -167,6 +167,7 @@ void main() {
     final salesReturn = SalesReturn.create(
       storeId: 'store_default',
       userId: 'user_admin',
+      approvedByUserId: 'user_admin',
       reason: 'Customer changed their mind',
       refundMethod: 'cash',
       refundAmount: 250,

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/database/database_helper.dart';
 import '../../../core/permissions/price_override_guard.dart';
 import '../../../core/utils/quantity_utils.dart';
 import '../../../core/widgets/app_scaffold.dart';
@@ -292,17 +291,7 @@ class _ReturnFormScreenState extends ConsumerState<ReturnFormScreen> {
               ))
           .toList();
 
-      final saved = await ref.read(salesReturnNotifierProvider).createReturn(header: header, items: items);
-
-      if (approvedByUserId != null) {
-        await DatabaseHelper.instance.logAudit(
-          userId: approvedByUserId,
-          actionType: 'SALES_RETURN_APPROVED',
-          tableName: 'sales_returns',
-          recordId: saved.id,
-          newValue: 'Return of ₹${refundAmount.toStringAsFixed(2)} approved for cashier ${currentUser.name}',
-        );
-      }
+      await ref.read(salesReturnNotifierProvider).createReturn(header: header, items: items);
 
       if (!mounted) return;
       await showDialog<void>(
