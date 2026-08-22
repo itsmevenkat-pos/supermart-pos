@@ -1320,7 +1320,7 @@ way that *requires something of Phase 2* — a migration-number collision, a
 conflict on merge, a broken build or test, or a change touching Phase 2's own
 modules — not merely when the diff contains code. Plus the unchanged triggers:
 a review landing on the open PR, or a new task file in `tasks/phase2/`.
-Last idle notification: **2026-08-21, thirteenth firing** (see below).
+Last idle notification: **2026-08-22, fourteenth firing** (see below).
 
 ### Still open, still human — unchanged
 
@@ -1548,3 +1548,55 @@ head start.
    the 478-test suite.
 
 A fourteenth idle firing on 2026-08-21 should change nothing and end silently.
+
+## Fourteenth firing (2026-08-22) — idle, stamp moved, nothing else
+
+Same shape as the eleventh through thirteenth: cheap check only, **no
+`analyze`, no `test`, no code changed**, and the only edits are the
+notification stamp above plus this section. A new UTC date is again the sole
+thing this firing has that the previous one did not.
+
+Unchanged, all read from `git`, the GitHub API and the source tree:
+`origin/main` still **`0e9a80a`** — now unmoved for **~7 days**; branch ahead 13
+(journal-only), behind 0; `git diff --name-only origin/main HEAD` is
+`tasks/phase2/PROGRESS.md` and nothing else, so there is again no tree to
+measure that `main` has not already measured; four task files in
+`tasks/phase2/`, no fifth; `dbVersion` **34** (`lib/constants/app_constants.dart`),
+guards contiguous through `oldVersion < 34`, files through `migration_v34.dart`
+with no duplicate version numbers, `MigrationV1` delegating to V28 and V30–V34
+(skipping V29 by design, inline in V1's `CREATE TABLE`) — **next free is still
+35**; **PR #4** open, `base` at `0e9a80a`, `head` at `28d6a88`, **0 reviews,
+0 comments**, `updated_at` **`2026-08-21T01:00:30Z`**, its own last push — now
+**unreviewed for 6 days**.
+
+Per the twelfth firing's correction, this entry stamps the UTC **date** only.
+The PR timestamp above is read from the API and is exact.
+
+### One note on the SDK abort
+
+The parallel-download lesson from the tenth firing held again, with one wrinkle
+worth recording for the next firing: the abort used
+`pkill -f "flutter.tar.xz"`, and that pattern **matched the killing shell's own
+command line**, so the `rm -rf` chained after it never ran (exit 144) and the
+tarball plus `/home/user/flutter` were still on disk. The follow-up check
+caught it and a plain `rm -rf` cleaned both. If a future firing aborts the
+download, just `rm -rf` the paths — the background job dies with the container
+anyway, and a `pkill` pattern broad enough to match the tarball name is also
+broad enough to match the command doing the killing.
+
+### Still open, still human — unchanged for a seventh consecutive firing
+
+1. **PR #4** needs a human to merge or close it. Open since 2026-08-16, never
+   reviewed, never commented on.
+2. `_accountantAllowedRoutes`, and the three off-ledger liabilities (loyalty
+   points, gateway settlement fees, commission) — grouped as one task by
+   `docs/AUDIT_2026-08-16.md` §7.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day, still
+   enabled. A firing must not repoint itself. The decision-free destination named
+   since the seventh firing still stands: `docs/AUDIT_2026-08-16.md` §7 — real
+   `sqflite_common_ffi` tests for `sale_repository`, plus the schema round-trip
+   and route-coverage tests, into the hole the 20 deleted placebo tests left in
+   the 478-test suite.
+
+A fifteenth idle firing on 2026-08-22 should change nothing and end silently.
