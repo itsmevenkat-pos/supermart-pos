@@ -97,11 +97,26 @@ again but took no new migration), read fresh from the source:
 - highest `if (oldVersion < N)` block — **34**
 - highest `migration_vN.dart` on disk — **v34**
 
-**The next migration therefore takes 35.** These three remain aligned
+**On `main`, the next migration would take 35.** These three remain aligned
 (`MigrationVn` is guarded by `oldVersion < n`, and `dbVersion` equals the
-highest `n`), so a new migration means: add `migration_v35.dart`, an
-`if (oldVersion < 35)` block, a `MigrationV35.up()` call in `MigrationV1`, and
-`dbVersion = 35`.
+highest `n`), so a new migration means: add `migration_vN.dart`, an
+`if (oldVersion < N)` block, a `MigrationVN.up()` call in `MigrationV1`, and
+`dbVersion = N`.
+
+> **⚠ But v35 is already claimed on an unmerged branch — do not take it.**
+> Re-read 2026-08-22 (sixteenth firing).
+> `origin/project3-financial-authorization-cash-management` (`d29a093`, WIP,
+> **no PR**) adds `migration_v35.dart` (`cash_movements` gains
+> `counterparty` / `approved_by_user_id` / `reason`), an `oldVersion < 35`
+> guard and `dbVersion = 35`. It is one commit on top of `0e9a80a`, so it will
+> merge cleanly and take 35 with it.
+>
+> **A new migration written today should therefore take 36**, and must re-read
+> all three places first — including `git branch -r`, which is the check every
+> previous version of this section missed. Reading only `main` is what produced
+> the v29 collision that PR #2 had to unpick by hand: `main` was not wrong, it
+> was merely not yet aware of a branch that already existed. **The lesson is
+> that "next free" is a property of every live branch, not of `main`.**
 
 This is worth being careful about, because the collision it guards against has
 already happened once for real: Phase 2's branch was cut before the packing-date
@@ -1341,6 +1356,17 @@ conflict on merge, a broken build or test, or a change touching Phase 2's own
 modules — not merely when the diff contains code. Plus the unchanged triggers:
 a review landing on the open PR, or a new task file in `tasks/phase2/`.
 Last idle notification: **2026-08-22, fourteenth firing** (see below).
+Last non-idle notification: **2026-08-22, sixteenth firing** (23:05 UTC, read
+from `date -u`) — a new branch claiming the next-free migration number, which
+is a named break-silence trigger, not an idle ping.
+
+**Note for the seventeenth firing (01:58 UTC, 2026-08-23):** it will open on a
+new UTC calendar date and the idle-notification stamp above will read
+2026-08-22, so the cadence rule would permit an idle ping less than three hours
+after the sixteenth firing's. **Do not take it.** The rule's intent is one ping
+a day, and the sixteenth's went out at the tail of the previous date; treat
+2026-08-23 as already spent unless something new appears that Project 3's entry
+below does not already cover.
 
 ### Still open, still human — unchanged
 
@@ -1627,3 +1653,108 @@ belongs. Sections like this one (eleventh through fourteenth) should not have
 been written; a firing only earns its own section if something actually moved.
 A sixteenth idle firing should add one tally line at most, and must not notify
 before **2026-08-23** UTC.
+
+## Sixteenth firing (2026-08-22) — NOT idle: a third branch claimed v35
+
+The previous entry budgeted this firing one tally line. It gets a section
+instead, because the thing every entry since the seventh has been watching for
+finally happened: **a branch outside this routine claimed the migration version
+this file advertises as free.** That is the named break-silence trigger, and it
+is the first genuinely new fact in eight firings.
+
+### What is new
+
+`origin/project3-financial-authorization-cash-management` — commit `d29a093`,
+"Project 3: financial authorization and cash management (WIP)", one commit on
+top of `0e9a80a`, **66 files, +14254/−687**, and **no pull request open for
+it**. No previous entry in this journal mentions this branch; it did not exist
+at the fifteenth firing.
+
+It adds `lib/core/database/migrations/migration_v35.dart` (three nullable
+columns on `cash_movements`: `counterparty`, `approved_by_user_id`, `reason`),
+an `if (oldVersion < 35)` guard, a `MigrationV35.up()` call, and
+`dbVersion = 35`.
+
+**So v35 is spoken for.** The "Migration version" section at the top now says
+so, and says the next migration should take **36**. This is the third time the
+next-free number in this file has gone stale, and the cause is the same every
+time: the number was derived from `main` alone. The correction added this run
+is the general fix — **check `git branch -r`, not just `main`**, because a
+migration number is claimed by whichever branch merges first, and `main` is by
+definition unaware of every branch that has not merged yet.
+
+Worth stating plainly for whoever picks up Project 3: **it did nothing wrong.**
+Against `main` (`dbVersion = 34`) v35 was the correct next number. The hazard
+is not its choice; it is that two workstreams reading `main` at the same time
+will both read the same "next free" and both be right.
+
+### The live hazard this exposes, which is worse than the v35 collision
+
+`main`'s own copy of this file — merged, and the copy any automation starting
+from `main` will read — still says **"next free is 34."** v34 exists on `main`
+(`aa26d7d`, `cash_movements`). So the guidance sitting on the default branch
+right now points at a number that is already taken, and the correction to it
+has been sitting in **PR #4, unreviewed, for 7 days.**
+
+That is exactly the v29 collision that had to be unpicked by hand at the PR #2
+merge, re-armed and pointed at v34, with three workstreams now live in the repo
+(this branch, Project 3, and the owner's own commits) instead of two.
+
+### Verification (Flutter 3.47.0 stable / Dart 3.13.0)
+
+The SDK was launched in parallel with the git checks per the tenth firing's
+lesson and, unlike the last six firings, was **kept and used** — because there
+was something worth measuring that no firing had ever actually measured.
+
+The 138-issue / 478-test baseline recorded by the eighth firing was **copied
+from `main`'s commit message, never independently run.** Every future run is
+told to diff against it, so a wrong number there would read as a regression in
+whatever ran next. Now measured, on this branch, from a clean container:
+
+- `flutter analyze` — **138 issues, 0 errors, 0 warnings** (138 info).
+  Confirms the recorded baseline exactly.
+- `flutter test` (full suite) — **478 passing, 0 failures.** Confirms the
+  recorded count exactly.
+
+Both numbers are now first-hand rather than second-hand. `lib/` and `test/` on
+this branch remain byte-identical to `main` (`git diff --name-only origin/main
+HEAD -- lib/ test/ docs/` is empty), so these are `main`'s numbers too.
+
+The `flutter pub get` churn behaved as documented (`analysis_options.yaml` +
+`pubspec.lock` only); both were `git checkout --`'d and neither is in this
+commit.
+
+### Unchanged
+
+Four modules `✅ Done` and merged; four task files in `tasks/phase2/`, no fifth;
+`origin/main` still **`0e9a80a`** (unmoved ~7 days); branch ahead 15
+(journal-only), behind 0; **PR #4** open, base `0e9a80a`, `updated_at`
+`2026-08-22T21:01:34Z` (its own last push), **0 reviews, 0 comments** —
+unreviewed for 7 days, and still the only open PR in the repo.
+
+### Why this firing notified
+
+The cadence rule forbids an *idle* notification before 2026-08-23 UTC. This
+firing is not idle: "a migration-number collision" is one of the four
+break-silence triggers the eighth firing named, and this is the closest the
+repo has come to one since PR #2. The notification reports the stale number on
+`main` and the unmerged v35 — not the routine's idleness, which has been
+reported eight times and does not need a ninth.
+
+### Still open, still human — unchanged for an eighth consecutive firing
+
+1. **PR #4** needs a human to merge or close it. Its whole content is the
+   corrected migration guidance, which is now **two versions stale on `main`**
+   (says 34; v34 taken, v35 claimed on Project 3's branch). This is no longer
+   bookkeeping — it is the one merge that stops the next automation from
+   picking a used number.
+2. `_accountantAllowedRoutes`, and the three off-ledger liabilities (loyalty
+   points, gateway settlement fees, commission) — grouped as one task by
+   `docs/AUDIT_2026-08-16.md` §7.
+3. **The routine is still pointed at four `✅ Done` task files.** Trigger
+   `trig_015xBTZVY9eN4drF6mTqz2cZ`, cron `58 */2 * * *`, 12 firings a day,
+   still enabled. A firing must not repoint itself.
+
+A seventeenth firing should do the cheap check plus `git branch -r`, and if
+nothing beyond Project 3 has appeared, add one tally line and end silently —
+it must not notify again for Project 3, which is now recorded here.
